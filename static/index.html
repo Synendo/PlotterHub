@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Plotter Hub</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Plotter Hub <span class="version">1.0.0</span></h1>
+    <div class="header-right">
+      <div id="status" class="status idle">idle</div>
+      <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
+    </div>
+  </header>
+
+  <div id="settings-modal" class="modal" hidden>
+    <div class="modal-card">
+      <h2>Settings</h2>
+      <label class="field">
+        <span class="field-label">Plotter Model</span>
+        <select id="settings-plotter-model">
+          <option value="1">1 — AxiDraw V2 / V3 / SE A4 (215 × 279 mm)</option>
+          <option value="2">2 — AxiDraw SE A3 / iDraw H SE A3 (430 × 297 mm)</option>
+          <option value="3">3 — AxiDraw V3 XLX (595 × 218 mm)</option>
+          <option value="4">4 — AxiDraw MiniKit (150 × 210 mm)</option>
+          <option value="5">5 — AxiDraw SE A1 (842 × 594 mm)</option>
+          <option value="6">6 — AxiDraw SE A2 (594 × 420 mm)</option>
+          <option value="7">7 — AxiDraw V3 B6 (150 × 105 mm)</option>
+          <option value="8">8 — AxiDraw V3 Wide (390 × 218 mm)</option>
+        </select>
+      </label>
+      <p class="muted">Plotter model sets the hardware working area — change only if the plotter itself is different.</p>
+
+      <h3 class="subsection-title">Default Plotter Speed</h3>
+      <p class="muted">These values are used as starting points for each new job. You can still override them per job.</p>
+      <div class="slider-stack">
+        <label class="field slider">
+          <span class="field-label">Pen-down speed (1–110)</span>
+          <div class="slider-row">
+            <input type="range" id="settings-speed-pendown-slider" min="1" max="110" step="1" value="25" />
+            <input type="number" id="settings-speed-pendown" min="1" max="110" step="1" value="25" />
+          </div>
+        </label>
+        <label class="field slider">
+          <span class="field-label">Pen-up speed (1–110)</span>
+          <div class="slider-row">
+            <input type="range" id="settings-speed-penup-slider" min="1" max="110" step="1" value="75" />
+            <input type="number" id="settings-speed-penup" min="1" max="110" step="1" value="75" />
+          </div>
+        </label>
+        <label class="field slider">
+          <span class="field-label">Acceleration (1–100)</span>
+          <div class="slider-row">
+            <input type="range" id="settings-accel-slider" min="1" max="100" step="1" value="75" />
+            <input type="number" id="settings-accel" min="1" max="100" step="1" value="75" />
+          </div>
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="settings-cancel" class="neutral">Cancel</button>
+        <button id="settings-save" class="primary">Save</button>
+      </div>
+      <div id="settings-message" class="muted"></div>
+    </div>
+  </div>
+
+  <main>
+    <section id="upload-section">
+      <label class="drop-zone" id="drop-zone" for="file-input">
+        <span>Drop SVGs here (or click) to add to the queue</span>
+      </label>
+      <input type="file" id="file-input" accept=".svg,image/svg+xml" multiple class="visually-hidden" />
+      <div id="upload-error" class="error" hidden></div>
+    </section>
+
+    <section id="queue-controls" hidden>
+      <div class="actions">
+        <button id="plot-btn" class="primary">Plot</button>
+        <button id="pause-btn" class="secondary" hidden>Pause</button>
+        <button id="resume-btn" class="primary" hidden>Resume</button>
+        <button id="continue-btn" class="primary" hidden>Continue</button>
+        <button id="cancel-btn" class="danger" hidden>Cancel</button>
+      </div>
+      <div id="queue-progress" hidden>
+        <div class="progress-bar"><div class="progress-fill"></div></div>
+        <div class="progress-time"></div>
+      </div>
+      <div id="top-message" class="muted"></div>
+    </section>
+
+    <section id="queue-section">
+      <div id="queue-list"></div>
+      <div id="queue-empty" class="muted empty-hint">Drop an SVG above to get started.</div>
+    </section>
+  </main>
+
+  <!-- Card template for one queue job -->
+  <template id="job-card-template">
+    <article class="job-card">
+      <header class="job-card-head">
+        <div class="job-summary">
+          <span class="job-filename"></span>
+          <span class="job-sub muted"></span>
+        </div>
+        <div class="job-status-pill status"></div>
+        <div class="job-actions">
+          <button class="icon-btn job-move-up" title="Move up">↑</button>
+          <button class="icon-btn job-move-down" title="Move down">↓</button>
+          <button class="icon-btn job-requeue" title="Plot again" hidden>↻</button>
+          <button class="icon-btn job-delete" title="Remove">✕</button>
+          <span class="expand-caret" aria-hidden="true">▼</span>
+        </div>
+      </header>
+      <div class="job-body" hidden>
+        <div class="columns">
+          <div class="col-preview">
+            <div class="svg-preview"></div>
+            <div class="svg-dims muted"></div>
+            <div class="plot-info" hidden>
+              <div><span>Estimated time</span><strong class="est-time">—</strong></div>
+              <div><span>Pen-down distance</span><strong class="pendown-dist">—</strong></div>
+              <div><span>Total distance</span><strong class="total-dist">—</strong></div>
+              <div><span>Pen lifts</span><strong class="pen-lifts">—</strong></div>
+            </div>
+            <section class="card-section collapsed" data-section="parameters">
+              <header class="card-section-head">
+                <span class="card-section-title">Plotter Speed</span>
+                <button class="icon-btn card-section-reset" data-reset="parameters" title="Restore defaults" aria-label="Restore parameter defaults">↺</button>
+                <span class="card-section-caret" aria-hidden="true">▼</span>
+              </header>
+              <div class="card-section-body">
+                <div class="slider-stack">
+                  <label class="field slider">
+                    <span class="field-label">Pen-down speed (1–110)</span>
+                    <div class="slider-row">
+                      <input type="range" class="speed-pendown-slider" min="1" max="110" step="1" value="25" />
+                      <input type="number" class="speed-pendown" value="25" min="1" max="110" step="1" />
+                    </div>
+                  </label>
+                  <label class="field slider">
+                    <span class="field-label">Pen-up speed (1–110)</span>
+                    <div class="slider-row">
+                      <input type="range" class="speed-penup-slider" min="1" max="110" step="1" value="75" />
+                      <input type="number" class="speed-penup" value="75" min="1" max="110" step="1" />
+                    </div>
+                  </label>
+                  <label class="field slider">
+                    <span class="field-label">Acceleration (1–100)</span>
+                    <div class="slider-row">
+                      <input type="range" class="accel-slider" min="1" max="100" step="1" value="75" />
+                      <input type="number" class="accel" value="75" min="1" max="100" step="1" />
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div class="col-form">
+            <section class="card-section" data-section="layers">
+              <header class="card-section-head">
+                <span class="card-section-title">Layers</span>
+                <span class="card-section-caret" aria-hidden="true">▼</span>
+              </header>
+              <div class="card-section-body">
+                <ul class="layers"></ul>
+                <div class="stages-wrap" hidden>
+                  <h3 class="subsection-title">Stages</h3>
+                  <ol class="stages"></ol>
+                </div>
+              </div>
+            </section>
+            <section class="card-section" data-section="paper">
+              <header class="card-section-head">
+                <span class="card-section-title">Page</span>
+                <span class="card-section-caret" aria-hidden="true">▼</span>
+              </header>
+              <div class="card-section-body">
+                <div class="form-row">
+                  <label class="field grow">
+                    <span class="field-label">Paper Size</span>
+                    <select class="paper-size">
+                      <optgroup label="Metric (ISO A)">
+                        <option value="A0">A0 (841 × 1189 mm)</option>
+                        <option value="A1">A1 (594 × 841 mm)</option>
+                        <option value="A2">A2 (420 × 594 mm)</option>
+                        <option value="A3">A3 (297 × 420 mm)</option>
+                        <option value="A4">A4 (210 × 297 mm)</option>
+                        <option value="A5">A5 (148 × 210 mm)</option>
+                      </optgroup>
+                      <optgroup label="Metric (ISO B)">
+                        <option value="B0">B0 (1000 × 1414 mm)</option>
+                        <option value="B1">B1 (707 × 1000 mm)</option>
+                        <option value="B2">B2 (500 × 707 mm)</option>
+                        <option value="B3">B3 (353 × 500 mm)</option>
+                        <option value="B4">B4 (250 × 353 mm)</option>
+                        <option value="B5">B5 (176 × 250 mm)</option>
+                      </optgroup>
+                      <optgroup label="Imperial">
+                        <option value="Letter">Letter (8.5 × 11 in)</option>
+                        <option value="Legal">Legal (8.5 × 14 in)</option>
+                        <option value="Ledger">Ledger (11 × 17 in)</option>
+                        <option value="ANSI-C">ANSI-C (17 × 22 in)</option>
+                        <option value="ANSI-D">ANSI-D (22 × 34 in)</option>
+                        <option value="ANSI-E">ANSI-E (34 × 44 in)</option>
+                      </optgroup>
+                      <option value="Custom">Custom</option>
+                    </select>
+                  </label>
+                  <div class="field">
+                    <span class="field-label">Orientation</span>
+                    <div class="segmented orientation">
+                      <button type="button" data-val="portrait" class="active">Portrait</button>
+                      <button type="button" data-val="landscape">Landscape</button>
+                    </div>
+                  </div>
+                </div>
+                <label class="inline-check">
+                  <input type="checkbox" class="fit-content" />
+                  <span>Fit content to page</span>
+                </label>
+                <div class="form-row custom-dims" hidden>
+                  <label class="field">
+                    <span class="field-label">Width (mm)</span>
+                    <input class="paper-w" type="number" step="0.1" min="10" value="210" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Height (mm)</span>
+                    <input class="paper-h" type="number" step="0.1" min="10" value="297" />
+                  </label>
+                </div>
+              </div>
+            </section>
+            <section class="card-section collapsed" data-section="margins">
+              <header class="card-section-head">
+                <span class="card-section-title">Page Margins</span>
+                <button class="icon-btn card-section-reset" data-reset="margins" title="Reset margins" aria-label="Reset margins">↺</button>
+                <span class="card-section-caret" aria-hidden="true">▼</span>
+              </header>
+              <div class="card-section-body">
+                <div class="margin-grid">
+                  <label><input type="number" class="margin-top" step="0.5" min="0" value="0" /><span>Top (mm)</span></label>
+                  <label><input type="number" class="margin-bottom" step="0.5" min="0" value="0" /><span>Bottom (mm)</span></label>
+                  <label><input type="number" class="margin-left" step="0.5" min="0" value="0" /><span>Left (mm)</span></label>
+                  <label><input type="number" class="margin-right" step="0.5" min="0" value="0" /><span>Right (mm)</span></label>
+                </div>
+              </div>
+            </section>
+            <section class="card-section collapsed" data-section="transform">
+              <header class="card-section-head">
+                <span class="card-section-title">Transform</span>
+                <button class="icon-btn card-section-reset" data-reset="transform" title="Reset transform" aria-label="Reset transform">↺</button>
+                <span class="card-section-caret" aria-hidden="true">▼</span>
+              </header>
+              <div class="card-section-body">
+                <div class="slider-grid">
+                  <label>
+                    <span>Scale</span>
+                    <div class="slider-row">
+                      <input type="range" class="transform-scale-slider" step="0.01" min="0.01" max="5" value="1" />
+                      <input type="number" class="transform-scale" step="0.01" min="0.01" max="5" value="1.00" />
+                    </div>
+                  </label>
+                  <label>
+                    <span>Rotation (°)</span>
+                    <div class="slider-row">
+                      <input type="range" class="transform-rotation-slider" step="1" min="0" max="360" value="0" />
+                      <input type="number" class="transform-rotation" step="1" min="0" max="360" value="0" />
+                    </div>
+                  </label>
+                  <label>
+                    <span>Offset X (mm)</span>
+                    <div class="slider-row">
+                      <input type="range" class="transform-offset-x-slider" step="0.5" value="0" />
+                      <input type="number" class="transform-offset-x" step="0.5" value="0" />
+                    </div>
+                  </label>
+                  <label>
+                    <span>Offset Y (mm)</span>
+                    <div class="slider-row">
+                      <input type="range" class="transform-offset-y-slider" step="0.5" value="0" />
+                      <input type="number" class="transform-offset-y" step="0.5" value="0" />
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </section>
+            <section class="card-section" data-section="job">
+              <header class="card-section-head">
+                <span class="card-section-title">Job</span>
+                <span class="card-section-caret" aria-hidden="true">▼</span>
+              </header>
+              <div class="card-section-body">
+                <div class="multi-layer-options" hidden>
+                  <label class="inline-check">
+                    <input type="checkbox" class="pause-between-layers" checked />
+                    <span>Pause between layers for pen changes</span>
+                  </label>
+                </div>
+                <label class="inline-check">
+                  <input type="checkbox" class="pause-after-job" checked />
+                  <span>Pause after this job (for paper / pen change before the next one)</span>
+                </label>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
