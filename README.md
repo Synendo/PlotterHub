@@ -35,7 +35,7 @@ Open `http://plotterhub.local/` (or whatever your Pi's hostname is) and you get 
 
 ## Install
 
-On a clean Raspberry Pi:
+On a clean Raspberry Pi, as whichever user you want the service to run as:
 
 ```bash
 git clone <this-repo> ~/plotterhub
@@ -45,11 +45,13 @@ cd ~/plotterhub
 
 The script is idempotent — re-run after `git pull` to update dependencies and restart the service. It will:
 
-1. Check Python ≥ 3.11, confirm the user is in `dialout`, verify avahi-daemon is running
+1. Check Python ≥ 3.11, confirm the current user is in `dialout`, verify avahi-daemon is running
 2. Install `python3`, `python3-venv`, `python3-pip` via apt
 3. Create a venv and install Python dependencies including `pyaxidraw`
-4. Install the systemd unit, binding port 80 if free, else port 8080
+4. Install the systemd unit — templating the invoking user and the clone path into it — and bind port 80 if free, else port 8080
 5. Start the service
+
+The systemd unit runs the server as the user who invoked `install.sh`, from the directory where the repo was cloned — no need to be `plotter`, and the clone path isn't constrained to `~/plotterhub`.
 
 When the script finishes it prints the URL to open in your browser.
 

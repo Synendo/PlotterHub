@@ -84,6 +84,11 @@ echo ">>> Installing Python dependencies"
 echo ">>> Installing systemd unit"
 run_sudo cp "$UNIT_SRC" "$UNIT_DST"
 
+# The repo's unit is a template; fill in the service user and the project
+# path so it runs as the invoking user from wherever the repo was cloned.
+run_sudo sed -i "s|__SERVICE_USER__|$SERVICE_USER|g" "$UNIT_DST"
+run_sudo sed -i "s|__WORKDIR__|$PROJECT_DIR|g" "$UNIT_DST"
+
 # Rewrite the port if we fell back.
 if [ "$PORT" != "80" ]; then
     run_sudo sed -i "s|--port 80|--port $PORT|" "$UNIT_DST"
