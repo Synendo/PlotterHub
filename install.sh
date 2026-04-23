@@ -59,6 +59,13 @@ else
     echo "    warning: avahi-daemon is not running; '.local' hostname resolution may not work"
 fi
 
+# If a previous install is already running, stop it so its own port-80
+# binding doesn't look like a conflict during the port probe below.
+if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    echo "    $SERVICE_NAME already running; stopping for clean reinstall"
+    run_sudo systemctl stop "$SERVICE_NAME"
+fi
+
 # Pick a free port
 if ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE '(^|:)80$'; then
     PORT=8080
