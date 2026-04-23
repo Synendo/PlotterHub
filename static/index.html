@@ -17,46 +17,63 @@
   <div id="settings-modal" class="modal" hidden>
     <div class="modal-card">
       <h2>Settings</h2>
-      <label class="field">
-        <span class="field-label">Plotter Model</span>
-        <select id="settings-plotter-model">
-          <option value="1">1 — AxiDraw V2 / V3 / SE A4 (215 × 279 mm)</option>
-          <option value="2">2 — AxiDraw SE A3 / iDraw H SE A3 (430 × 297 mm)</option>
-          <option value="3">3 — AxiDraw V3 XLX (595 × 218 mm)</option>
-          <option value="4">4 — AxiDraw MiniKit (150 × 210 mm)</option>
-          <option value="5">5 — AxiDraw SE A1 (842 × 594 mm)</option>
-          <option value="6">6 — AxiDraw SE A2 (594 × 420 mm)</option>
-          <option value="7">7 — AxiDraw V3 B6 (150 × 105 mm)</option>
-          <option value="8">8 — AxiDraw V3 Wide (390 × 218 mm)</option>
-        </select>
-      </label>
-      <p class="muted">Plotter model sets the hardware working area — change only if the plotter itself is different.</p>
 
-      <h3 class="subsection-title">Default Plotter Speed</h3>
-      <p class="muted">These values are used as starting points for each new job. You can still override them per job.</p>
-      <div class="slider-stack">
-        <label class="field slider">
-          <span class="field-label">Pen-down speed (1–110)</span>
-          <div class="slider-row">
-            <input type="range" id="settings-speed-pendown-slider" min="1" max="110" step="1" value="25" />
-            <input type="number" id="settings-speed-pendown" min="1" max="110" step="1" value="25" />
+      <section class="card-section" data-section="plotter-model">
+        <header class="card-section-head">
+          <span class="card-section-title">Plotter Model</span>
+          <span class="card-section-caret" aria-hidden="true">▼</span>
+        </header>
+        <div class="card-section-body">
+          <label class="field">
+            <span class="field-label">Model</span>
+            <select id="settings-plotter-model">
+              <option value="1">1 — AxiDraw V2 / V3 / SE A4 (215 × 279 mm)</option>
+              <option value="2">2 — AxiDraw SE A3 / iDraw H SE A3 (430 × 297 mm)</option>
+              <option value="3">3 — AxiDraw V3 XLX (595 × 218 mm)</option>
+              <option value="4">4 — AxiDraw MiniKit (150 × 210 mm)</option>
+              <option value="5">5 — AxiDraw SE A1 (842 × 594 mm)</option>
+              <option value="6">6 — AxiDraw SE A2 (594 × 420 mm)</option>
+              <option value="7">7 — AxiDraw V3 B6 (150 × 105 mm)</option>
+              <option value="8">8 — AxiDraw V3 Wide (390 × 218 mm)</option>
+            </select>
+          </label>
+          <p class="muted">Plotter model sets the hardware working area — change only if the plotter itself is different.</p>
+        </div>
+      </section>
+
+      <section class="card-section" data-section="plotter-speed">
+        <header class="card-section-head">
+          <span class="card-section-title">Plotter Speed</span>
+          <button class="icon-btn card-section-reset" data-reset="settings-speed" title="Restore defaults" aria-label="Restore default plotter speed">↺</button>
+          <span class="card-section-caret" aria-hidden="true">▼</span>
+        </header>
+        <div class="card-section-body">
+          <p class="muted">Defaults for new jobs. Per-job overrides still work.</p>
+          <div class="slider-stack">
+            <label class="field slider">
+              <span class="field-label">Pen-down speed (1–110)</span>
+              <div class="slider-row">
+                <input type="range" id="settings-speed-pendown-slider" min="1" max="110" step="1" value="25" />
+                <input type="number" id="settings-speed-pendown" min="1" max="110" step="1" value="25" />
+              </div>
+            </label>
+            <label class="field slider">
+              <span class="field-label">Pen-up speed (1–110)</span>
+              <div class="slider-row">
+                <input type="range" id="settings-speed-penup-slider" min="1" max="110" step="1" value="75" />
+                <input type="number" id="settings-speed-penup" min="1" max="110" step="1" value="75" />
+              </div>
+            </label>
+            <label class="field slider">
+              <span class="field-label">Acceleration (1–100)</span>
+              <div class="slider-row">
+                <input type="range" id="settings-accel-slider" min="1" max="100" step="1" value="75" />
+                <input type="number" id="settings-accel" min="1" max="100" step="1" value="75" />
+              </div>
+            </label>
           </div>
-        </label>
-        <label class="field slider">
-          <span class="field-label">Pen-up speed (1–110)</span>
-          <div class="slider-row">
-            <input type="range" id="settings-speed-penup-slider" min="1" max="110" step="1" value="75" />
-            <input type="number" id="settings-speed-penup" min="1" max="110" step="1" value="75" />
-          </div>
-        </label>
-        <label class="field slider">
-          <span class="field-label">Acceleration (1–100)</span>
-          <div class="slider-row">
-            <input type="range" id="settings-accel-slider" min="1" max="100" step="1" value="75" />
-            <input type="number" id="settings-accel" min="1" max="100" step="1" value="75" />
-          </div>
-        </label>
-      </div>
+        </div>
+      </section>
 
       <div class="actions">
         <button id="settings-cancel" class="neutral">Cancel</button>

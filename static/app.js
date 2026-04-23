@@ -1070,6 +1070,34 @@ for (const base of ["settings-speed-pendown", "settings-speed-penup", "settings-
   updateSliderProgress(slider);
 }
 
+// Wire collapsible sections + reset button inside the Settings modal
+function resetSettingsSpeed() {
+  const pairs = [
+    ["settings-speed-pendown", "settings-speed-pendown-slider", 25],
+    ["settings-speed-penup", "settings-speed-penup-slider", 75],
+    ["settings-accel", "settings-accel-slider", 75],
+  ];
+  for (const [numId, sliderId, val] of pairs) {
+    const n = $(numId);
+    const s = $(sliderId);
+    if (n) n.value = val;
+    if (s) { s.value = val; updateSliderProgress(s); }
+  }
+}
+
+settingsModal.querySelectorAll(".card-section-head").forEach((head) => {
+  head.addEventListener("click", (e) => {
+    if (e.target.closest(".card-section-reset")) return;
+    head.parentElement.classList.toggle("collapsed");
+  });
+});
+settingsModal.querySelectorAll(".card-section-reset").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (btn.dataset.reset === "settings-speed") resetSettingsSpeed();
+  });
+});
+
 // ───── Pen cursor on active job's preview ────────────────────────────────
 
 function updatePenCursor(msg) {
