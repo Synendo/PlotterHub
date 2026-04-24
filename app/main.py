@@ -153,7 +153,17 @@ def delete_job(job_id: str):
         raise HTTPException(404)
     if j["status"] in ("plotting", "planning", "paused", "awaiting_pen_change", "homing"):
         raise HTTPException(409, "cannot remove an active job")
+    svg_id = j.get("svg_id")
     state.remove_job(job_id)
+    # Delete the source SVG and every derivative (preview / filtered / staged /
+    # resume). svg_id is a uuid4 fragment, 1:1 with a job, so globbing on it
+    # can't hit another job's files.
+    if svg_id:
+        for p in UPLOAD_DIR.glob(f"{svg_id}.*"):
+            try:
+                p.unlink()
+            except OSError:
+                log.exception("delete_job: failed to unlink %s", p)
     return {"ok": True}
 
 
