@@ -4,6 +4,14 @@ A self-hosted plot server for the iDraw H SE A3 and AxiDraw-class pen plotters. 
 
 Open `http://plotterhub.local/` (or whatever your Pi's hostname is) and you get a drag-and-drop UI with layer-by-layer plotting, pen-change pauses, paper-size presets, and a live pen-position cursor.
 
+## Background
+
+I didn't like that my iDraw H SE A3 plotter had to stay connected to my laptop to run a plot. Luckily it's compatible with the great [AxiDraw software](https://axidraw.com/), which can be installed on a Raspberry Pi — so this repo is just a UI around [AxiDraw's Python library](https://axidraw.com/doc/py_api/).
+
+I also had a look at [saxi](https://github.com/nornagon/saxi), but it didn't support the physical pause button on my iDraw. AxiDraw does recognize button presses, so Plotter Hub supports it: press the button once to pause, press it a second time to resume the plot.
+
+**Disclaimer:** this code was completely created by [Claude Code](https://claude.com/claude-code) (Claude Opus 4.7, 1M-context).
+
 ## Features
 
 **Plotting**
@@ -21,7 +29,7 @@ Open `http://plotterhub.local/` (or whatever your Pi's hostname is) and you get 
 - Physical pause button toggles: press to pause, press again to resume
 
 **Operational**
-- Runs as a systemd service under the `plotter` user
+- Runs as a systemd service under the user who invoked `install.sh`
 - Plot worker runs in a thread; preview runs in a subprocess (cancel-killable)
 - In-memory preview cache — same SVG + same params skips the ~20–30s planning pass
 - Graceful shutdown on service stop: pauses any in-flight plot so the pen is raised and the resume SVG is flushed
@@ -30,6 +38,8 @@ Open `http://plotterhub.local/` (or whatever your Pi's hostname is) and you get 
 
 - Raspberry Pi 3B+ or newer running Raspberry Pi OS Trixie (Debian 13) or Bookworm (Debian 12)
 - An iDraw H SE A3, AxiDraw, or compatible EBB-based plotter on USB
+
+Tested on a Raspberry Pi 3 Model B running Raspberry Pi OS Lite (64-bit), a port of Debian Trixie with no desktop environment (released 2026-04-21).
 
 `install.sh` checks these prerequisites and aborts with a hint if any are missing:
 
@@ -60,11 +70,18 @@ The script relies on these but does not install them: `sudo`, `apt`, `systemctl`
 
 ## Install
 
-On a clean Raspberry Pi, as whichever user you want the service to run as:
+On a clean Raspberry Pi, as whichever user you want the service to run as. From your workstation, ssh in (replace the hostname/username with your Pi's):
 
 ```bash
-git clone <this-repo> ~/plotterhub
-cd ~/plotterhub
+ssh plotter@plotterhub.local
+```
+
+Raspberry Pi OS Lite doesn't ship with git, so install it first if needed, then clone and run the installer:
+
+```bash
+sudo apt update && sudo apt install -y git
+git clone https://github.com/Synendo/PlotterHub.git ~/PlotterHub
+cd ~/PlotterHub
 ./install.sh
 ```
 
@@ -78,7 +95,7 @@ The script is idempotent — re-run after `git pull` to update dependencies and 
 
 If a previous install is already running, the script stops it first so the port probe doesn't see its own listener as a conflict, then binds port 80 if free, else port 8080.
 
-The systemd unit runs the server as the user who invoked `install.sh`, from the directory where the repo was cloned — no need to be `plotter`, and the clone path isn't constrained to `~/plotterhub`.
+The systemd unit runs the server as the user who invoked `install.sh`, from the directory where the repo was cloned — no specific username is required, and the clone path isn't constrained.
 
 When the script finishes it prints the URL to open in your browser.
 
@@ -93,17 +110,6 @@ PLOTTER_MODEL=1 ./install.sh
 ```
 
 After install, the plotter model can also be changed from the UI (gear icon → Settings) and is persisted to `config.json`.
-
-## Versioning
-
-The version string shown in the UI header comes from the `VERSION` file at the repo root. Bump it there — no code edits needed:
-
-```bash
-echo "1.1.0" > VERSION
-git commit -am "Release 1.1.0"
-```
-
-The backend reads `VERSION` at import time and serves it via `GET /version`; the frontend fetches it on page load.
 
 ## Architecture
 
@@ -140,9 +146,11 @@ uploads/            # gitignored; uploaded SVGs and per-stage filtered / resume 
 The local source of truth is on your workstation; deploy to the Pi via rsync:
 
 ```bash
+# Replace <user>@<host> with your Pi's ssh target, and ~/PlotterHub with
+# the path where you cloned the repo.
 rsync -avz --exclude=.git --exclude=venv --exclude='uploads/*' \
-  -e ssh ./ plotter@plotterhub.local:/home/plotter/plotterhub/
-ssh plotter@plotterhub.local './plotterhub/install.sh'
+  -e ssh ./ <user>@<host>.local:~/PlotterHub/
+ssh <user>@<host>.local '~/PlotterHub/install.sh'
 ```
 
 `install.sh` detects that dependencies are already installed and just restarts the service.
