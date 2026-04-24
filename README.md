@@ -111,6 +111,20 @@ PLOTTER_MODEL=1 ./install.sh
 
 After install, the plotter model can also be changed from the UI (gear icon → Settings) and is persisted to `config.json`.
 
+## Updating
+
+ssh to the Pi, pull the latest version of the repository and re-run the installer:
+
+```bash
+cd ~/PlotterHub
+git pull
+./install.sh
+```
+
+`install.sh` is idempotent, so re-running it is the upgrade path — `apt` skips satisfied packages, `pip` only installs requirements that changed, and the systemd unit is re-templated and restarted. Your `config.json`, `state.json`, and everything under `uploads/` is gitignored and preserved across upgrades; the job queue rehydrates on service start.
+
+Before upgrading, it's cleanest to wait until the queue is idle (or the active job is `paused` / `awaiting_pen_change`). If you do upgrade mid-plot, the graceful-shutdown handler pauses the active job and queue persistence restores it as a resumable paused job on the next start.
+
 ## Architecture
 
 | Layer | What it is |

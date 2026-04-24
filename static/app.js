@@ -461,6 +461,15 @@ function updateCard(card, job) {
   pill.textContent = statusLabel(job.status);
   pill.className = `job-status-pill status ${job.status}`;
 
+  const errorEl = card.querySelector(".job-error");
+  if (job.error) {
+    errorEl.textContent = job.error;
+    errorEl.hidden = false;
+  } else {
+    errorEl.textContent = "";
+    errorEl.hidden = true;
+  }
+
   // Disable editing when job is active
   const activeBlocks = job.id === serverState.active_id &&
     !["queued", "completed", "failed", "cancelled"].includes(job.status);

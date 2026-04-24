@@ -136,6 +136,15 @@ main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 
 .job-body { padding: 0 1rem 1rem 1rem; border-top: 1px solid #eee; }
 
+.job-error {
+  padding: 0.55rem 1rem;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 0.85rem;
+  border-top: 1px solid #fecaca;
+}
+.job-error[hidden] { display: none; }
+
 .job-card.readonly .col-form { opacity: 0.6; }
 
 .visually-hidden {
