@@ -940,6 +940,15 @@ function applyTopControls() {
     topMessage.className = active.error ? "error" : "muted";
   }
 
+  // Shutdown button: disabled while the worker is busy so the Pi can't be
+  // powered off mid-plot. Safe to shut down only when idle (no active job and
+  // not waiting between jobs).
+  const busy = !!s.active_id || !!s.awaiting_next_job;
+  shutdownBtn.disabled = busy;
+  shutdownBtn.title = busy
+    ? "Cancel or finish the active plot before shutting down"
+    : "Shut down Raspberry Pi";
+
   // Sticky progress bar
   if (active && active.status === "plotting" && active.plotting_started_at && active.estimated_total_seconds > 0) {
     queueProgress.hidden = false;

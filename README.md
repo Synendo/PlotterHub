@@ -115,7 +115,7 @@ The backend reads `VERSION` at import time and serves it via `GET /version`; the
 | Transport | HTTP + WebSocket |
 | State | In-memory, broadcast via `asyncio.Queue` |
 | Process mgmt | systemd (`plotterhub.service`) |
-| Persistence | Uploaded SVGs + resume SVGs on disk; `config.json` for plotter model |
+| Persistence | Uploaded SVGs + resume SVGs on disk; `config.json` for plotter model; `state.json` for the job queue (so a paused plot survives a service restart) |
 
 Key module layout:
 
@@ -151,7 +151,6 @@ Never restart the service mid-plot — Python can't kill a thread, so a SIGTERM 
 
 ## Known limitations
 
-- In-memory state: a paused plot is preserved on disk (resume SVG) but the UI on a fresh page load after a restart won't offer "Resume previous job". Future work.
 - No live progress while `plot_run` is in its ~18s pre-motion setup phase (EBB version query, servo init, path planning) — pyaxidraw doesn't expose progress events until motion starts.
 
 ## License

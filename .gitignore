@@ -6,3 +6,4 @@ uploads/*
 .DS_Store
 .claude/
 config.json
+state.json

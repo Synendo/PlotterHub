@@ -284,10 +284,20 @@ def resume_active() -> None:
     job = state.active_job()
     if job is None or job["status"] != "paused":
         raise RuntimeError("No paused job to resume")
-    if not job.get("resume_path"):
-        raise RuntimeError("No resume data")
-    _stop_button_poll()
-    state.update_job(job["id"], status="plotting", plotting_started_at=time.time())
+
+    # Live scenario: worker thread is blocked in the mid-stage pause-wait loop.
+    # Flip status to plotting and it unblocks.
+    if _worker_thread is not None and _worker_thread.is_alive():
+        if not job.get("resume_path"):
+            raise RuntimeError("No resume data")
+        _stop_button_poll()
+        state.update_job(job["id"], status="plotting", plotting_started_at=time.time())
+        return
+
+    # Post-restart scenario: no worker thread exists. Start the queue loop —
+    # its paused-first dispatch picks up this job and routes it to _resume_job,
+    # which skips re-planning and jumps into the staged loop.
+    start_queue()
 
 
 def continue_next() -> None:
@@ -313,6 +323,14 @@ def cancel_active() -> None:
     job = state.active_job()
     if job is None:
         raise RuntimeError("No active job")
+
+    # Post-restart: no worker thread to signal. Flip to cancelled directly;
+    # the pen is wherever the user left it — they'll need to home manually.
+    if _worker_thread is None or not _worker_thread.is_alive():
+        state.update_job(job["id"], status="cancelled", resume_path=None)
+        state.set_active(None)
+        return
+
     st = job["status"]
     if st == "plotting":
         _cancel_flag.set()
@@ -361,12 +379,26 @@ def _queue_loop() -> None:
             if _cancel_flag.is_set():
                 _cancel_flag.clear()
                 return
-            job = state.next_queued_job()
-            if job is None:
-                return
-            state.set_active(job["id"])
-            _run_job(job["id"])
-            state.set_active(None)
+            # Paused jobs take priority: they were interrupted mid-run by a
+            # service restart and should be finished before any fresh queued
+            # job starts.
+            paused = state.next_paused_job()
+            if paused is not None:
+                state.set_active(paused["id"])
+                _resume_job(paused["id"])
+                state.set_active(None)
+                if _cancel_flag.is_set():
+                    _cancel_flag.clear()
+                    continue
+                # Fall through to between-jobs pause check below
+                job = paused
+            else:
+                job = state.next_queued_job()
+                if job is None:
+                    return
+                state.set_active(job["id"])
+                _run_job(job["id"])
+                state.set_active(None)
 
             if _cancel_flag.is_set():
                 _cancel_flag.clear()
@@ -387,6 +419,23 @@ def _queue_loop() -> None:
         log.exception("queue loop crashed")
     finally:
         _stop_button_poll()
+
+
+def _resume_job(job_id: str) -> None:
+    """Resume a job left in 'paused' by a service restart.
+
+    Skips the planning/re-staging block of _run_job: the job's stages list and
+    current_stage_index are already on disk. If a resume_path is set we
+    continue from that partial SVG via res_plot; otherwise we're at a clean
+    stage boundary (an awaiting_pen_change checkpoint) and the next stage is
+    re-rendered fresh.
+    """
+    job = state.get_job(job_id)
+    if job is None:
+        return
+    svg_path = _uploads() / f"{job['svg_id']}.svg"
+    first_mode = "res_plot" if job.get("resume_path") else "plot"
+    _run_staged_loop(job_id, svg_path, first_mode=first_mode)
 
 
 def _run_job(job_id: str) -> None:

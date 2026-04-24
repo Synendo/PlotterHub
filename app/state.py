@@ -1,8 +1,22 @@
 import asyncio
 import json
+import logging
+import os
 import time
 import uuid
 from copy import deepcopy
+from pathlib import Path
+
+log = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+STATE_PATH = BASE_DIR / "state.json"
+UPLOAD_DIR = BASE_DIR / "uploads"
+
+# Jobs that were mid-run when the service died need normalization on load.
+# With a valid resume_path on disk the worker's existing res_plot flow can
+# continue them; otherwise we can't recover position so they become failed.
+_IN_FLIGHT_STATUSES = {"planning", "plotting", "homing", "awaiting_pen_change"}
 
 _queue: list[dict] = []
 _active_id: str | None = None
@@ -18,6 +32,79 @@ def init(loop: asyncio.AbstractEventLoop) -> None:
     global _event_queue, _loop
     _loop = loop
     _event_queue = asyncio.Queue()
+    _load_from_disk()
+
+
+def _load_from_disk() -> None:
+    """Rehydrate the queue from state.json. Called once at startup.
+
+    Skips jobs whose source SVG has been deleted — they're unrecoverable.
+    Normalizes statuses so an interrupted plot surfaces as 'paused' (if a
+    resume SVG is on disk, OR if it was a clean awaiting_pen_change boundary)
+    or 'failed' otherwise, never as 'plotting'.
+    """
+    global _queue, _active_id
+    if not STATE_PATH.exists():
+        return
+    try:
+        data = json.loads(STATE_PATH.read_text())
+    except Exception:
+        log.exception("state: could not parse %s; starting empty", STATE_PATH)
+        return
+    raw = data.get("queue") or []
+    rehydrated: list[dict] = []
+    for job in raw:
+        if not isinstance(job, dict) or "id" not in job or "svg_id" not in job:
+            continue
+        if not (UPLOAD_DIR / f"{job['svg_id']}.svg").exists():
+            log.info("state: dropping job %s — source SVG missing", job.get("id"))
+            continue
+        status = job.get("status")
+        resume_path = job.get("resume_path")
+        resume_ok = bool(resume_path) and Path(resume_path).exists()
+        if status == "awaiting_pen_change":
+            # Clean checkpoint between stages: no resume SVG needed — the next
+            # stage will be filtered/rendered from current_stage_index fresh.
+            job["status"] = "paused"
+            job["resume_path"] = None
+        elif status in _IN_FLIGHT_STATUSES:
+            # planning/plotting/homing: pen was somewhere mid-motion. We can
+            # recover only if plot_run had time to write a resume SVG.
+            if resume_ok:
+                job["status"] = "paused"
+            else:
+                job["status"] = "failed"
+                job["error"] = "Service restarted mid-plot before a resume point was reached."
+                job["resume_path"] = None
+        elif status == "paused" and not resume_ok:
+            job["status"] = "failed"
+            job["error"] = "Resume data missing after service restart."
+            job["resume_path"] = None
+        rehydrated.append(job)
+    _queue = rehydrated
+
+    # Surface the first paused job as the UI's "active" one so the Resume
+    # button is wired up without needing a live worker thread.
+    for j in _queue:
+        if j["status"] == "paused":
+            _active_id = j["id"]
+            break
+
+    log.info("state: loaded %d job(s) from %s", len(_queue), STATE_PATH)
+
+
+def _persist() -> None:
+    """Atomically write the queue to state.json. Called after every mutation.
+
+    Writes to a sibling tmp file and renames so a crash mid-write can't
+    corrupt the file the next boot reads.
+    """
+    try:
+        tmp = STATE_PATH.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps({"queue": _queue}, indent=2) + "\n")
+        os.replace(tmp, STATE_PATH)
+    except Exception:
+        log.exception("state: failed to persist %s", STATE_PATH)
 
 
 def snapshot() -> dict:
@@ -59,6 +146,7 @@ def active_job() -> dict | None:
 def add_job(job: dict) -> dict:
     record = _make_record(job)
     _queue.append(record)
+    _persist()
     _broadcast()
     return deepcopy(record)
 
@@ -87,6 +175,7 @@ def update_job(job_id: str, **updates) -> dict | None:
     if j is None:
         return None
     j.update(updates)
+    _persist()
     _broadcast()
     return deepcopy(j)
 
@@ -96,6 +185,7 @@ def update_job_silent(job_id: str, **updates) -> None:
     j = _get(job_id)
     if j is not None:
         j.update(updates)
+        _persist()
 
 
 def remove_job(job_id: str) -> bool:
@@ -103,6 +193,7 @@ def remove_job(job_id: str) -> bool:
     before = len(_queue)
     _queue = [j for j in _queue if j["id"] != job_id]
     if len(_queue) < before:
+        _persist()
         _broadcast()
         return True
     return False
@@ -116,6 +207,7 @@ def move_job(job_id: str, new_index: int) -> bool:
     _queue = [x for x in _queue if x["id"] != job_id]
     new_index = max(0, min(new_index, len(_queue)))
     _queue.insert(new_index, j)
+    _persist()
     _broadcast()
     return True
 
@@ -141,6 +233,13 @@ def set_error(err: str | None) -> None:
 def next_queued_job() -> dict | None:
     for j in _queue:
         if j["status"] == "queued":
+            return j
+    return None
+
+
+def next_paused_job() -> dict | None:
+    for j in _queue:
+        if j["status"] == "paused":
             return j
     return None
 
