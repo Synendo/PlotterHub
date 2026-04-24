@@ -11,7 +11,19 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
+BASE_DIR = Path(__file__).resolve().parent.parent
+CONFIG_PATH = BASE_DIR / "config.json"
+VERSION_PATH = BASE_DIR / "VERSION"
+
+
+def _read_version() -> str:
+    try:
+        return VERSION_PATH.read_text().strip() or "unknown"
+    except OSError:
+        return "unknown"
+
+
+APP_VERSION: str = _read_version()
 
 PLOTTER_MODEL: int = int(os.environ.get("PLOTTER_MODEL", "2"))
 

@@ -1085,6 +1085,43 @@ function resetSettingsSpeed() {
   }
 }
 
+// ───── Shutdown modal ────────────────────────────────────────────────────
+
+const shutdownBtn = $("shutdown-btn");
+const shutdownModal = $("shutdown-modal");
+const shutdownCancel = $("shutdown-cancel");
+const shutdownConfirm = $("shutdown-confirm");
+const shutdownMessage = $("shutdown-message");
+
+function openShutdownModal() {
+  shutdownMessage.textContent = "";
+  shutdownMessage.className = "muted";
+  shutdownConfirm.disabled = false;
+  shutdownCancel.disabled = false;
+  shutdownModal.hidden = false;
+}
+function closeShutdownModal() { shutdownModal.hidden = true; }
+
+shutdownBtn.addEventListener("click", openShutdownModal);
+shutdownCancel.addEventListener("click", closeShutdownModal);
+shutdownModal.addEventListener("click", (e) => { if (e.target === shutdownModal) closeShutdownModal(); });
+shutdownConfirm.addEventListener("click", async () => {
+  shutdownConfirm.disabled = true;
+  shutdownCancel.disabled = true;
+  shutdownMessage.textContent = "Shutting down…";
+  shutdownMessage.className = "muted";
+  try {
+    const res = await fetch("/system/shutdown", { method: "POST" });
+    if (!res.ok) throw new Error(await readErr(res));
+    shutdownMessage.textContent = "Shutdown command sent. You can close this tab.";
+  } catch (e) {
+    shutdownMessage.textContent = `Shutdown failed: ${e.message}`;
+    shutdownMessage.className = "error";
+    shutdownConfirm.disabled = false;
+    shutdownCancel.disabled = false;
+  }
+});
+
 settingsModal.querySelectorAll(".card-section-head").forEach((head) => {
   head.addEventListener("click", (e) => {
     if (e.target.closest(".card-section-reset")) return;
@@ -1138,6 +1175,17 @@ function connectWs() {
 }
 connectWs();
 loadAppSettings();
+loadAppVersion();
+
+async function loadAppVersion() {
+  try {
+    const res = await fetch("/version");
+    if (!res.ok) return;
+    const data = await res.json();
+    const el = $("app-version");
+    if (el && data.version) el.textContent = data.version;
+  } catch (e) {}
+}
 
 window.addEventListener("resize", () => {
   cardEls.forEach((card, id) => {

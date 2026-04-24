@@ -7,12 +7,35 @@
 </head>
 <body>
   <header>
-    <h1>Plotter Hub <span class="version">1.0.0</span></h1>
+    <h1>Plotter Hub <span class="version" id="app-version"></span></h1>
     <div class="header-right">
       <div id="status" class="status idle">idle</div>
-      <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
+      <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+      <button id="shutdown-btn" class="icon-btn" title="Shut down Raspberry Pi" aria-label="Shut down Raspberry Pi">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+          <line x1="12" y1="2" x2="12" y2="12"></line>
+        </svg>
+      </button>
     </div>
   </header>
+
+  <div id="shutdown-modal" class="modal" hidden>
+    <div class="modal-card">
+      <h2>Shut down Raspberry Pi?</h2>
+      <p class="muted">The Plotter Hub service will stop and the Pi will power off. You'll need physical access to turn it back on.</p>
+      <div class="actions">
+        <button id="shutdown-cancel" class="neutral">Cancel</button>
+        <button id="shutdown-confirm" class="danger">Shut down</button>
+      </div>
+      <div id="shutdown-message" class="muted"></div>
+    </div>
+  </div>
 
   <div id="settings-modal" class="modal" hidden>
     <div class="modal-card">
@@ -48,7 +71,7 @@
           <span class="card-section-caret" aria-hidden="true">▼</span>
         </header>
         <div class="card-section-body">
-          <p class="muted">Defaults for new jobs. Per-job overrides still work.</p>
+          <p class="muted">Defaults for new jobs. Per-job settings will override these defaults.</p>
           <div class="slider-stack">
             <label class="field slider">
               <span class="field-label">Pen-down speed (1–110)</span>

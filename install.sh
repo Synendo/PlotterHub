@@ -101,13 +101,21 @@ if [ "$PORT" != "80" ]; then
     run_sudo sed -i "s|--port 80|--port $PORT|" "$UNIT_DST"
     # Low-port capability is only needed for ports <1024.
     run_sudo sed -i '/^AmbientCapabilities=/d' "$UNIT_DST"
-    run_sudo sed -i '/^CapabilityBoundingSet=/d' "$UNIT_DST"
 fi
 
 if [ -n "${PLOTTER_MODEL:-}" ]; then
     echo ">>> Setting PLOTTER_MODEL=$PLOTTER_MODEL in unit"
     run_sudo sed -i "s/^Environment=PLOTTER_MODEL=.*/Environment=PLOTTER_MODEL=$PLOTTER_MODEL/" "$UNIT_DST"
 fi
+
+echo ">>> Installing sudoers rule for shutdown button"
+SUDOERS_DST="/etc/sudoers.d/plotterhub-shutdown"
+SUDOERS_TMP="$(mktemp)"
+printf '%s ALL=(root) NOPASSWD: /sbin/shutdown\n' "$SERVICE_USER" > "$SUDOERS_TMP"
+chmod 0440 "$SUDOERS_TMP"
+run_sudo visudo -cf "$SUDOERS_TMP" >/dev/null
+run_sudo install -m 0440 -o root -g root "$SUDOERS_TMP" "$SUDOERS_DST"
+rm -f "$SUDOERS_TMP"
 
 run_sudo systemctl daemon-reload
 run_sudo systemctl enable "$SERVICE_NAME"

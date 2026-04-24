@@ -34,6 +34,7 @@ body > header h1 { margin: 0; font-size: 1.25rem; font-weight: 500; color: #222;
 }
 .icon-btn:hover { opacity: 1; }
 .icon-btn[hidden] { display: none; }
+.header-right .icon-btn > svg { width: 1.35rem; height: 1.35rem; display: block; }
 
 .modal {
   position: fixed;

@@ -28,10 +28,35 @@ Open `http://plotterhub.local/` (or whatever your Pi's hostname is) and you get 
 
 ## Requirements
 
-- Raspberry Pi 3B+ or newer running Raspberry Pi OS Trixie (Debian 13)
-- Python 3.11+
+- Raspberry Pi 3B+ or newer running Raspberry Pi OS Trixie (Debian 13) or Bookworm (Debian 12)
 - An iDraw H SE A3, AxiDraw, or compatible EBB-based plotter on USB
-- Service user must be a member of the `dialout` group (for `/dev/ttyACM0`)
+
+`install.sh` checks these prerequisites and aborts with a hint if any are missing:
+
+- Python ≥ 3.11 (default on Bookworm and newer)
+- Service user is a member of the `dialout` group (for `/dev/ttyACM0`)
+- `avahi-daemon` is running (warning only — needed for `.local` hostname)
+
+### Dependencies installed by the script
+
+**apt packages** (idempotent — apt skips anything already present):
+- [`python3`](https://www.python.org/)
+- [`python3-venv`](https://docs.python.org/3/library/venv.html)
+- [`python3-pip`](https://pip.pypa.io/)
+
+**Python packages**, pip-installed into a project-local `venv/`:
+- [`fastapi`](https://fastapi.tiangolo.com/)
+- [`uvicorn[standard]`](https://www.uvicorn.org/)
+- [`python-multipart`](https://github.com/Kludex/python-multipart)
+- [`pyaxidraw`](https://axidraw.com/doc/py_api/) (from the Evil Mad Scientist [AxiDraw API zip](https://cdn.evilmadscientist.com/dl/ad/public/AxiDraw_API.zip))
+
+**System files** (written / overwritten on every run):
+- `/etc/systemd/system/plotterhub.service` — templated from `systemd/plotterhub.service` with the invoking user and the repo path
+- `/etc/sudoers.d/plotterhub-shutdown` — grants the service user NOPASSWD on `/sbin/shutdown` so the UI's shutdown button works
+
+### Assumed already present on Raspberry Pi OS
+
+The script relies on these but does not install them: `sudo`, `apt`, `systemctl`, `ss` (from `iproute2`), `install`, `visudo`. They ship with any stock Raspberry Pi OS install.
 
 ## Install
 
@@ -43,13 +68,15 @@ cd ~/plotterhub
 ./install.sh
 ```
 
-The script is idempotent — re-run after `git pull` to update dependencies and restart the service. It will:
+The script is idempotent — re-run after `git pull` to update dependencies and restart the service. Concretely:
 
-1. Check Python ≥ 3.11, confirm the current user is in `dialout`, verify avahi-daemon is running
-2. Install `python3`, `python3-venv`, `python3-pip` via apt
-3. Create a venv and install Python dependencies including `pyaxidraw`
-4. Install the systemd unit — templating the invoking user and the clone path into it — and bind port 80 if free, else port 8080
-5. Start the service
+- apt install is a no-op when packages are already current
+- The `venv/` directory is only created if it doesn't exist; otherwise it's reused
+- `pip install -r requirements.txt` skips packages whose spec is already satisfied
+- The systemd unit and sudoers rule are re-templated and re-written every time
+- `systemctl daemon-reload` / `enable` / `restart` are safe to repeat
+
+If a previous install is already running, the script stops it first so the port probe doesn't see its own listener as a conflict, then binds port 80 if free, else port 8080.
 
 The systemd unit runs the server as the user who invoked `install.sh`, from the directory where the repo was cloned — no need to be `plotter`, and the clone path isn't constrained to `~/plotterhub`.
 
@@ -66,6 +93,17 @@ PLOTTER_MODEL=1 ./install.sh
 ```
 
 After install, the plotter model can also be changed from the UI (gear icon → Settings) and is persisted to `config.json`.
+
+## Versioning
+
+The version string shown in the UI header comes from the `VERSION` file at the repo root. Bump it there — no code edits needed:
+
+```bash
+echo "1.1.0" > VERSION
+git commit -am "Release 1.1.0"
+```
+
+The backend reads `VERSION` at import time and serves it via `GET /version`; the frontend fetches it on page load.
 
 ## Architecture
 

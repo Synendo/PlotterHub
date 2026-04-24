@@ -1,5 +1,9 @@
 import asyncio
+import logging
+import subprocess
 import uuid
+
+log = logging.getLogger(__name__)
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -252,6 +256,33 @@ def patch_settings(req: SettingsUpdate):
         raise HTTPException(400, "no settings provided")
     config.update(**updates)
     return config.snapshot()
+
+
+# System -----------------------------------------------------------------
+
+@app.get("/version")
+def get_version():
+    return {"version": config.APP_VERSION}
+
+
+@app.post("/system/shutdown")
+async def system_shutdown():
+    # Delay the halt so the HTTP response flushes to the client first. Requires
+    # the service user to have NOPASSWD sudo for /sbin/shutdown (set up by
+    # install.sh) and the service's CapabilityBoundingSet to permit CAP_SETUID /
+    # CAP_SETGID — otherwise sudo fails with "unable to change to root gid".
+    async def _do():
+        await asyncio.sleep(1.5)
+        proc = await asyncio.create_subprocess_exec(
+            "sudo", "-n", "/sbin/shutdown", "-h", "now",
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            log.error("shutdown failed: rc=%d stderr=%s",
+                      proc.returncode, stderr.decode(errors="replace").strip())
+    asyncio.create_task(_do())
+    return {"ok": True}
 
 
 # WebSocket --------------------------------------------------------------
