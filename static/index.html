@@ -121,6 +121,20 @@
         </div>
       </section>
 
+      <section class="card-section collapsed" data-section="api-key">
+        <header class="card-section-head">
+          <span class="card-section-title">API Key</span>
+          <span class="card-section-caret" aria-hidden="true">▼</span>
+        </header>
+        <div class="card-section-body">
+          <p class="muted">Send this in an <code>X-API-Key</code> header on requests to <code>/api/v1/*</code>. Auto-generated on first boot. See <a href="https://github.com/Synendo/PlotterHub/blob/main/API.md" target="_blank" rel="noopener">API.md</a> for the full reference.</p>
+          <div class="api-key-row">
+            <input id="settings-api-key" type="text" readonly />
+            <button id="settings-api-key-copy" class="neutral" type="button">Copy</button>
+          </div>
+        </div>
+      </section>
+
       <div class="actions">
         <button id="settings-cancel" class="neutral">Cancel</button>
         <button id="settings-save" class="primary">Save</button>

@@ -34,6 +34,10 @@ I also had a look at [saxi](https://github.com/nornagon/saxi), but it didn't sup
 - In-memory preview cache — same SVG + same params skips the ~20–30s planning pass
 - Graceful shutdown on service stop: pauses any in-flight plot so the pen is raised and the resume SVG is flushed
 
+**API**
+- HTTP API for companion apps and scripts under `/api/v1/*`, secured with an auto-generated `X-API-Key`
+- See [API.md](API.md) for the endpoint reference and `multipart/form-data` schema
+
 ## Requirements
 
 - Raspberry Pi 3B+ or newer running Raspberry Pi OS Trixie (Debian 13) or Bookworm (Debian 12)

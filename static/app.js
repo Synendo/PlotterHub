@@ -177,6 +177,54 @@ function detectPaper(w_mm, h_mm) {
   return { preset: "Custom", orientation: rW >= rH ? "landscape" : "portrait" };
 }
 
+// Inject a "<name> (W × H mm)" option for jobs whose `paper_size_name` does
+// not match the auto-detected preset. Returns true if injected. The option
+// remembers its dimensions on `dataset.w/h` so swapping orientation works.
+function injectNamedCustomOption(selectEl, job) {
+  selectEl.querySelectorAll('option[data-named-custom="1"]').forEach((o) => o.remove());
+  if (!job.paper_size_name) return false;
+  const guessed = guessPresetFromDims(job.paper_w_mm, job.paper_h_mm);
+  if (guessed.preset !== "Custom" &&
+      guessed.preset.toLowerCase() === job.paper_size_name.toLowerCase()) {
+    return false;
+  }
+  const opt = document.createElement("option");
+  opt.value = "__named_custom__";
+  opt.dataset.namedCustom = "1";
+  opt.dataset.name = job.paper_size_name;
+  opt.dataset.w = String(job.paper_w_mm);
+  opt.dataset.h = String(job.paper_h_mm);
+  opt.textContent = `${job.paper_size_name} (${Math.round(job.paper_w_mm)} × ${Math.round(job.paper_h_mm)} mm)`;
+  const customOpt = selectEl.querySelector('option[value="Custom"]');
+  selectEl.insertBefore(opt, customOpt);
+  return true;
+}
+
+// Resolve the current paper-size selection on a card to {w, h, paper_size_name}.
+// Encapsulates the named-custom logic so onPaperChange and sendCardUpdate
+// don't both have to know about it.
+function readPaperFromCard(card) {
+  const sel = card.querySelector(".paper-size");
+  const opt = sel.options[sel.selectedIndex];
+  const orientation = getSegmentedValue(card.querySelector(".orientation"));
+  if (sel.value === "__named_custom__" && opt) {
+    let w = parseFloat(opt.dataset.w);
+    let h = parseFloat(opt.dataset.h);
+    if (orientation === "landscape" && h > w) [w, h] = [h, w];
+    if (orientation === "portrait" && w > h) [w, h] = [h, w];
+    // Keep the option's stored dims and visible label in sync with orientation
+    // toggles so the dropdown text doesn't drift from the actual dimensions.
+    opt.dataset.w = String(w);
+    opt.dataset.h = String(h);
+    opt.textContent = `${opt.dataset.name} (${Math.round(w)} × ${Math.round(h)} mm)`;
+    return { w, h, paper_size_name: opt.dataset.name };
+  }
+  const customW = parseFloat(card.querySelector(".paper-w").value) || 210;
+  const customH = parseFloat(card.querySelector(".paper-h").value) || 297;
+  const { w, h } = computePaperDims(sel.value, orientation, customW, customH);
+  return { w, h, paper_size_name: null };
+}
+
 function computePaperDims(preset, orientation, customW, customH) {
   if (preset === "Custom") {
     let w = customW || 210;
@@ -225,9 +273,18 @@ function createCardForJob(job) {
 
   // Populate paper-size options & defaults from job data
   const paperSize = card.querySelector(".paper-size");
-  paperSize.value = guessPresetFromDims(job.paper_w_mm, job.paper_h_mm).preset;
+  const namedInjected = injectNamedCustomOption(paperSize, job);
+  if (namedInjected) {
+    paperSize.value = "__named_custom__";
+  } else {
+    paperSize.value = guessPresetFromDims(job.paper_w_mm, job.paper_h_mm).preset;
+  }
   const orientation = guessPresetFromDims(job.paper_w_mm, job.paper_h_mm).orientation;
   setSegmentedValue(card.querySelector(".orientation"), orientation);
+  // The `custom-dims` block is `hidden` in the template; only `onPaperChange`
+  // reveals it. Sync visibility on initial render so a job that arrives with
+  // Custom selected actually shows its dimension fields.
+  card.querySelector(".custom-dims").hidden = paperSize.value !== "Custom";
 
   card.querySelector(".paper-w").value = job.paper_w_mm;
   card.querySelector(".paper-h").value = job.paper_h_mm;
@@ -452,7 +509,7 @@ function updateCard(card, job) {
   ctx.lastSeenStatus = job.status;
 
   const filename = job.filename || "upload.svg";
-  card.querySelector(".job-filename").textContent = filename;
+  card.querySelector(".job-filename").textContent = job.name || filename;
 
   const paperLabel = formatPaperLabel(job);
   const stageCount = job.stages?.length || 0;
@@ -522,6 +579,9 @@ function updateCard(card, job) {
 }
 
 function formatPaperLabel(job) {
+  if (job.paper_size_name) {
+    return `${job.paper_size_name} (${Math.round(job.paper_w_mm)} × ${Math.round(job.paper_h_mm)} mm)`;
+  }
   const { preset, orientation } = guessPresetFromDims(job.paper_w_mm, job.paper_h_mm);
   if (preset === "Custom") return `${Math.round(job.paper_w_mm)}×${Math.round(job.paper_h_mm)} mm`;
   return `${preset} ${orientation}`;
@@ -730,23 +790,35 @@ function renderLayers(card, job) {
   if (!ctx || !ctx.svg) return;
   const ul = card.querySelector(".layers");
   const selected = new Set(job.layer_selections.map((s) => s.index));
+  const overrides = new Map(job.layer_selections.map((s) => [s.index, s]));
   ul.innerHTML = "";
   for (const layer of ctx.svg.layers) {
     const li = document.createElement("li");
     const checked = selected.has(layer.index);
+    const override = overrides.get(layer.index);
+    const displayLabel = (override && override.label) || layer.label;
+    const typeIcon = layerTypeIcon(override && override.type);
     li.innerHTML = `
       <label>
         <input type="checkbox" data-index="${layer.index}" ${checked ? "checked" : ""} />
-        <span class="layer-label">${escapeHtml(layer.label)}</span>
+        ${typeIcon}
+        <span class="layer-label">${escapeHtml(displayLabel)}</span>
       </label>`;
     ul.appendChild(li);
   }
   // Attach change handler once
   if (!ul.dataset.wired) {
     ul.addEventListener("change", () => {
+      const cur = serverState.queue.find((j) => j.id === card.dataset.id);
+      const curOverrides = new Map((cur?.layer_selections || []).map((s) => [s.index, s]));
       const layers = Array.from(ul.querySelectorAll("input[type=checkbox]:checked")).map((el) =>
         ctx.svg.layers.find((l) => l.index === parseInt(el.dataset.index))
-      ).filter(Boolean).map((l) => ({ index: l.index, label: l.label }));
+      ).filter(Boolean).map((l) => {
+        const ovr = curOverrides.get(l.index);
+        const sel = { index: l.index, label: (ovr && ovr.label) || l.label };
+        if (ovr && ovr.type) sel.type = ovr.type;
+        return sel;
+      });
       // Show/hide pause-between-layers only when >1 selected
       card.querySelector(".multi-layer-options").hidden = layers.length < 2;
       // Update the SVG preview visibility
@@ -789,15 +861,13 @@ function onPaperChange(card) {
   if (!job) return;
   const ctx = cardCtx.get(job.id);
   const preset = card.querySelector(".paper-size").value;
-  const orientation = getSegmentedValue(card.querySelector(".orientation"));
-  const customW = parseFloat(card.querySelector(".paper-w").value) || 210;
-  const customH = parseFloat(card.querySelector(".paper-h").value) || 297;
   card.querySelector(".custom-dims").hidden = preset !== "Custom";
-  const { w, h } = computePaperDims(preset, orientation, customW, customH);
+  const { w, h, paper_size_name } = readPaperFromCard(card);
 
   const updates = {
     paper_w_mm: w,
     paper_h_mm: h,
+    paper_size_name: paper_size_name,
     margin_top_mm: parseFloat(card.querySelector(".margin-top").value) || 0,
     margin_right_mm: parseFloat(card.querySelector(".margin-right").value) || 0,
     margin_bottom_mm: parseFloat(card.querySelector(".margin-bottom").value) || 0,
@@ -846,13 +916,10 @@ async function sendCardUpdate(card, immediateUpdates) {
   if (requeueBtn && job.status !== "queued") requeueBtn.hidden = true;
   const updates = immediateUpdates || {};
   if (!immediateUpdates) {
-    const preset = card.querySelector(".paper-size").value;
-    const orientation = getSegmentedValue(card.querySelector(".orientation"));
-    const { w, h } = computePaperDims(preset, orientation,
-      parseFloat(card.querySelector(".paper-w").value) || 210,
-      parseFloat(card.querySelector(".paper-h").value) || 297);
+    const { w, h, paper_size_name } = readPaperFromCard(card);
     updates.paper_w_mm = w;
     updates.paper_h_mm = h;
+    updates.paper_size_name = paper_size_name;
     updates.margin_top_mm = parseFloat(card.querySelector(".margin-top").value) || 0;
     updates.margin_right_mm = parseFloat(card.querySelector(".margin-right").value) || 0;
     updates.margin_bottom_mm = parseFloat(card.querySelector(".margin-bottom").value) || 0;
@@ -1009,11 +1076,25 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// Inline SVG glyphs that approximate the SF Symbols the macOS companion app
+// uses (waveform.path / character.text.justify / xmark.triangle.circle.square).
+const LAYER_TYPE_ICONS = {
+  pattern: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 8 Q 3 3 5 8 T 9 8 T 13 8 T 15 8" /></svg>`,
+  text: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="11" y2="12"/></svg>`,
+  svg: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3.2"/><rect x="7.5" y="7.5" width="6.5" height="6.5"/><polygon points="3,14 9,14 6,9"/></svg>`,
+};
+function layerTypeIcon(type) {
+  if (!type || !LAYER_TYPE_ICONS[type]) return "";
+  return `<span class="layer-type-icon" title="${type}">${LAYER_TYPE_ICONS[type]}</span>`;
+}
+
 // ───── Settings modal ────────────────────────────────────────────────────
 
 const settingsBtn = $("settings-btn");
 const settingsModal = $("settings-modal");
 const settingsPlotterModel = $("settings-plotter-model");
+const settingsApiKey = $("settings-api-key");
+const settingsApiKeyCopy = $("settings-api-key-copy");
 const settingsPauseBetweenLayers = $("settings-pause-between-layers");
 const settingsPauseAfterJob = $("settings-pause-after-job");
 const settingsDeleteOnComplete = $("settings-delete-on-complete");
@@ -1024,6 +1105,13 @@ settingsBtn.addEventListener("click", openSettings);
 $("settings-cancel").addEventListener("click", () => { settingsModal.hidden = true; });
 settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) settingsModal.hidden = true; });
 $("settings-save").addEventListener("click", saveSettings);
+settingsApiKeyCopy.addEventListener("click", async () => {
+  if (!settingsApiKey.value) return;
+  try { await navigator.clipboard.writeText(settingsApiKey.value); }
+  catch { settingsApiKey.select(); document.execCommand("copy"); }
+  settingsApiKeyCopy.textContent = "Copied";
+  setTimeout(() => { settingsApiKeyCopy.textContent = "Copy"; }, 1200);
+});
 
 function applyAppSettings(data) {
   appSettings = {
@@ -1051,6 +1139,7 @@ async function openSettings() {
     const data = await res.json();
     applyAppSettings(data);
     settingsPlotterModel.value = String(data.plotter_model || 2);
+    settingsApiKey.value = data.api_key || "";
     settingsPauseBetweenLayers.checked = data.pause_between_layers_default ?? true;
     settingsPauseAfterJob.checked = data.pause_after_job_default ?? true;
     settingsDeleteOnComplete.checked = data.delete_on_complete_default ?? false;

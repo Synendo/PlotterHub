@@ -7,6 +7,7 @@ the UI persist to the JSON file.
 import json
 import logging
 import os
+import secrets
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -26,6 +27,11 @@ def _read_version() -> str:
 APP_VERSION: str = _read_version()
 
 PLOTTER_MODEL: int = int(os.environ.get("PLOTTER_MODEL", "2"))
+
+# Static API key for /api/v1/* routes. Auto-generated on first run if missing
+# from config.json; persisted thereafter so the macOS companion app sees a
+# stable value across service restarts.
+API_KEY: str = ""
 
 # Defaults used for new jobs. The UI can override per-job; these are the
 # starting values a freshly-dropped SVG picks up.
@@ -56,13 +62,14 @@ def _coerce_bool(data: dict, key: str) -> bool | None:
 def _load_from_disk() -> None:
     global PLOTTER_MODEL, SPEED_PENDOWN_DEFAULT, SPEED_PENUP_DEFAULT, ACCEL_DEFAULT
     global PAUSE_BETWEEN_LAYERS_DEFAULT, PAUSE_AFTER_JOB_DEFAULT, DELETE_ON_COMPLETE_DEFAULT
-    if not CONFIG_PATH.exists():
-        return
-    try:
-        data = json.loads(CONFIG_PATH.read_text())
-    except Exception:
-        log.exception("config: could not parse %s; using defaults", CONFIG_PATH)
-        return
+    global API_KEY
+    data: dict = {}
+    if CONFIG_PATH.exists():
+        try:
+            data = json.loads(CONFIG_PATH.read_text())
+        except Exception:
+            log.exception("config: could not parse %s; using defaults", CONFIG_PATH)
+            data = {}
     v = _coerce_int(data, "plotter_model")
     if v is not None: PLOTTER_MODEL = v
     v = _coerce_int(data, "speed_pendown_default")
@@ -77,6 +84,12 @@ def _load_from_disk() -> None:
     if v is not None: PAUSE_AFTER_JOB_DEFAULT = v
     v = _coerce_bool(data, "delete_on_complete_default")
     if v is not None: DELETE_ON_COMPLETE_DEFAULT = v
+    api = data.get("api_key")
+    if isinstance(api, str) and api.strip():
+        API_KEY = api.strip()
+    else:
+        API_KEY = secrets.token_urlsafe(24)
+        _save_to_disk()
 
 
 def _save_to_disk() -> None:
@@ -89,6 +102,7 @@ def _save_to_disk() -> None:
 def snapshot() -> dict:
     return {
         "plotter_model": PLOTTER_MODEL,
+        "api_key": API_KEY,
         "pause_between_layers_default": PAUSE_BETWEEN_LAYERS_DEFAULT,
         "pause_after_job_default": PAUSE_AFTER_JOB_DEFAULT,
         "delete_on_complete_default": DELETE_ON_COMPLETE_DEFAULT,

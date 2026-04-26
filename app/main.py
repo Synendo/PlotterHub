@@ -1,4 +1,5 @@
 import asyncio
+import json as _json
 import logging
 import subprocess
 import uuid
@@ -6,17 +7,31 @@ import uuid
 log = logging.getLogger(__name__)
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from . import config, plot_worker, state, svg_utils
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 STATIC_DIR = BASE_DIR / "static"
+
+# Mirror of static/app.js PAPER_SIZES — portrait dims in mm. Used by the
+# /api/v1/jobs endpoint to resolve paper_size.name into dimensions.
+PAPER_PRESETS: dict[str, tuple[float, float]] = {
+    "A0": (841, 1189), "A1": (594, 841), "A2": (420, 594),
+    "A3": (297, 420),  "A4": (210, 297), "A5": (148, 210),
+    "B0": (1000, 1414), "B1": (707, 1000), "B2": (500, 707),
+    "B3": (353, 500),  "B4": (250, 353), "B5": (176, 250),
+    "Letter": (216, 279), "Legal": (216, 356), "Ledger": (279, 432),
+    "ANSI-C": (432, 559), "ANSI-D": (559, 864), "ANSI-E": (864, 1118),
+}
+
+LENGTH_UNIT_TO_MM: dict[str, float] = {"mm": 1.0, "cm": 10.0, "in": 25.4}
 
 
 @asynccontextmanager
@@ -67,6 +82,8 @@ def get_svg(svg_id: str):
 class JobCreate(BaseModel):
     svg_id: str
     filename: str = "upload.svg"
+    name: str | None = None
+    paper_size_name: str | None = None
     layer_selections: list[dict]
     pause_between_layers: bool = True
     pause_after_job: bool = True
@@ -87,8 +104,24 @@ class JobCreate(BaseModel):
     accel: int = 75
 
 
+class MoveRequest(BaseModel):
+    new_index: int = Field(..., ge=0)
+
+
+class SettingsUpdate(BaseModel):
+    plotter_model: int | None = Field(None, ge=1, le=8)
+    pause_between_layers_default: bool | None = None
+    pause_after_job_default: bool | None = None
+    delete_on_complete_default: bool | None = None
+    speed_pendown_default: int | None = Field(None, ge=1, le=110)
+    speed_penup_default: int | None = Field(None, ge=1, le=110)
+    accel_default: int | None = Field(None, ge=1, le=100)
+
+
 class JobUpdate(BaseModel):
     layer_selections: list[dict] | None = None
+    name: str | None = None
+    paper_size_name: str | None = None
     pause_between_layers: bool | None = None
     pause_after_job: bool | None = None
     delete_on_complete: bool | None = None
@@ -139,7 +172,9 @@ def update_job(job_id: str, req: JobUpdate):
         raise HTTPException(404)
     if j["status"] not in ("queued", "completed", "failed", "cancelled"):
         raise HTTPException(409, "cannot edit an active job")
-    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    # exclude_unset so the client distinguishes "not sent" from "explicitly null"
+    # — needed e.g. for paper_size_name which can be cleared back to None.
+    updates = req.model_dump(exclude_unset=True)
     # Re-queue on edit so user can re-plot a finished/cancelled job without extra steps
     if j["status"] != "queued":
         updates["status"] = "queued"
@@ -174,8 +209,265 @@ def delete_job(job_id: str):
     return {"ok": True}
 
 
-class MoveRequest(BaseModel):
-    new_index: int = Field(..., ge=0)
+# Public API (v1) -----------------------------------------------------------
+# Routes under /api/v1/* are intended for external clients (e.g. the macOS
+# companion app). They require the X-API-Key header. The web UI uses the
+# unprefixed routes above (loopback, no auth).
+
+def require_api_key(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
+    if not config.API_KEY:
+        raise HTTPException(503, "API key not initialized")
+    if x_api_key != config.API_KEY:
+        raise HTTPException(401, "invalid or missing X-API-Key")
+
+
+class ApiPaperSize(BaseModel):
+    name: str | None = None
+    width: float | None = None
+    height: float | None = None
+    unit: Literal["mm", "cm", "in"] = "mm"
+    orientation: Literal["portrait", "landscape"] | None = None
+
+
+class ApiLayer(BaseModel):
+    index: int = Field(ge=0)
+    name: str | None = None
+    type: Literal["pattern", "text", "svg"] | None = None
+    selected: bool | None = None  # None == not specified == default True
+
+
+class ApiJobMetadata(BaseModel):
+    name: str | None = None
+    paper_size: ApiPaperSize | None = None
+    layers: list[ApiLayer] = Field(default_factory=list)
+    pause_between_layers: bool | None = None
+    pause_after_job: bool | None = None
+    delete_on_complete: bool | None = None
+    speed_pendown: int | None = Field(default=None, ge=1, le=110)
+    speed_penup: int | None = Field(default=None, ge=1, le=110)
+    accel: int | None = Field(default=None, ge=1, le=100)
+
+
+def _resolve_paper(paper: ApiPaperSize | None,
+                   svg_w_mm: float | None,
+                   svg_h_mm: float | None) -> tuple[float, float, str | None]:
+    """Return (paper_w_mm, paper_h_mm, display_name)."""
+    if paper is None:
+        # Auto-detect from SVG dimensions, like the web UI does on a fresh upload.
+        return float(svg_w_mm or 210.0), float(svg_h_mm or 297.0), None
+
+    factor = LENGTH_UNIT_TO_MM[paper.unit]
+    w_mm: float | None = paper.width * factor if paper.width is not None else None
+    h_mm: float | None = paper.height * factor if paper.height is not None else None
+
+    if w_mm is None or h_mm is None:
+        # Fall back to the named preset.
+        if paper.name and paper.name in PAPER_PRESETS:
+            pw, ph = PAPER_PRESETS[paper.name]
+            w_mm, h_mm = float(pw), float(ph)
+        elif paper.name:
+            raise HTTPException(400, f"unknown paper preset: {paper.name!r}")
+        else:
+            raise HTTPException(400, "paper_size requires either width+height or a known name")
+
+    if paper.orientation == "landscape" and w_mm < h_mm:
+        w_mm, h_mm = h_mm, w_mm
+    elif paper.orientation == "portrait" and w_mm > h_mm:
+        w_mm, h_mm = h_mm, w_mm
+
+    return w_mm, h_mm, paper.name
+
+
+@app.post("/api/v1/jobs", dependencies=[Depends(require_api_key)])
+async def api_create_job(file: UploadFile = File(...),
+                         metadata: str | None = Form(default=None)):
+    # Parse + validate metadata (the part is a JSON string in multipart/form-data).
+    if metadata:
+        try:
+            meta_dict = _json.loads(metadata)
+        except _json.JSONDecodeError as e:
+            raise HTTPException(400, f"metadata is not valid JSON: {e.msg}")
+        try:
+            meta = ApiJobMetadata.model_validate(meta_dict)
+        except ValidationError as e:
+            raise HTTPException(400, f"metadata schema error: {e.errors()}")
+    else:
+        meta = ApiJobMetadata()
+
+    # Persist the SVG (mirrors /upload).
+    svg_id = uuid.uuid4().hex[:8]
+    path = UPLOAD_DIR / f"{svg_id}.svg"
+    path.write_bytes(await file.read())
+    try:
+        info = svg_utils.parse_layers(path)
+    except Exception as e:
+        path.unlink(missing_ok=True)
+        raise HTTPException(400, f"invalid SVG: {e}")
+
+    paper_w_mm, paper_h_mm, paper_name = _resolve_paper(
+        meta.paper_size, info.get("width_mm"), info.get("height_mm"),
+    )
+
+    # Build layer_selections: by default include all SVG layers, applying per-layer
+    # name/type/selected overrides from metadata (keyed by SVG layer index).
+    # `selected: false` filters the layer out of the job entirely; missing/null
+    # `selected` defaults to true so existing clients keep their behavior.
+    overrides = {l.index: l for l in meta.layers}
+    layer_selections: list[dict] = []
+    for layer in info["layers"]:
+        idx = layer["index"]
+        ovr = overrides.get(idx)
+        if ovr and ovr.selected is False:
+            continue
+        sel: dict = {"index": idx, "label": (ovr.name if ovr and ovr.name else layer["label"])}
+        if ovr and ovr.type:
+            sel["type"] = ovr.type
+        layer_selections.append(sel)
+
+    if not info["layers"]:
+        path.unlink(missing_ok=True)
+        raise HTTPException(400, "SVG contains no Inkscape layers")
+    if not layer_selections:
+        path.unlink(missing_ok=True)
+        raise HTTPException(400, "all layers were deselected")
+
+    def pick(meta_val, default):
+        return default if meta_val is None else meta_val
+
+    job_payload = {
+        "svg_id": svg_id,
+        "filename": file.filename or "upload.svg",
+        "name": meta.name,
+        "paper_size_name": paper_name,
+        "layer_selections": layer_selections,
+        "pause_between_layers": pick(meta.pause_between_layers, config.PAUSE_BETWEEN_LAYERS_DEFAULT),
+        "pause_after_job":      pick(meta.pause_after_job,      config.PAUSE_AFTER_JOB_DEFAULT),
+        "delete_on_complete":   pick(meta.delete_on_complete,   config.DELETE_ON_COMPLETE_DEFAULT),
+        "paper_w_mm": paper_w_mm,
+        "paper_h_mm": paper_h_mm,
+        "margin_top_mm": 0.0,
+        "margin_right_mm": 0.0,
+        "margin_bottom_mm": 0.0,
+        "margin_left_mm": 0.0,
+        "fit_content": False,
+        "transform_scale": 1.0,
+        "transform_rotation_deg": 0.0,
+        "transform_offset_x_mm": 0.0,
+        "transform_offset_y_mm": 0.0,
+        "speed_pendown": pick(meta.speed_pendown, config.SPEED_PENDOWN_DEFAULT),
+        "speed_penup":   pick(meta.speed_penup,   config.SPEED_PENUP_DEFAULT),
+        "accel":         pick(meta.accel,         config.ACCEL_DEFAULT),
+    }
+    return state.add_job(job_payload)
+
+
+# Queue control (public) ---------------------------------------------------
+# Thin wrappers around the existing /queue/* routes with auth bolted on.
+
+@app.post("/api/v1/queue/plot", dependencies=[Depends(require_api_key)])
+def api_queue_plot():
+    if not any(j["status"] == "queued" for j in state.snapshot()["queue"]):
+        raise HTTPException(409, "no queued job to plot")
+    active = state.active_job()
+    if active is not None and active["status"] in (
+        "plotting", "planning", "paused", "awaiting_pen_change", "homing",
+    ):
+        raise HTTPException(409, "queue is already running")
+    plot_worker.start_queue()
+    return {"ok": True}
+
+
+@app.post("/api/v1/queue/pause", dependencies=[Depends(require_api_key)])
+def api_queue_pause():
+    job = state.active_job()
+    if job is None or job["status"] != "plotting":
+        raise HTTPException(409, "no active plotting job")
+    plot_worker.pause_active()
+    return {"ok": True}
+
+
+@app.post("/api/v1/queue/resume", dependencies=[Depends(require_api_key)])
+def api_queue_resume():
+    try:
+        plot_worker.resume_active()
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/v1/queue/continue", dependencies=[Depends(require_api_key)])
+def api_queue_continue():
+    try:
+        plot_worker.continue_next()
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/v1/queue/cancel", dependencies=[Depends(require_api_key)])
+def api_queue_cancel():
+    try:
+        plot_worker.cancel_active()
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    return {"ok": True}
+
+
+# Per-job CRUD (public) ----------------------------------------------------
+# Thin auth-gated wrappers around the internal handlers above.
+
+@app.get("/api/v1/jobs", dependencies=[Depends(require_api_key)])
+def api_list_jobs():
+    return list_jobs()
+
+
+@app.get("/api/v1/jobs/{job_id}", dependencies=[Depends(require_api_key)])
+def api_get_job(job_id: str):
+    return get_job(job_id)
+
+
+@app.patch("/api/v1/jobs/{job_id}", dependencies=[Depends(require_api_key)])
+def api_update_job(job_id: str, req: JobUpdate):
+    return update_job(job_id, req)
+
+
+@app.delete("/api/v1/jobs/{job_id}", dependencies=[Depends(require_api_key)])
+def api_delete_job(job_id: str):
+    return delete_job(job_id)
+
+
+@app.post("/api/v1/jobs/{job_id}/move", dependencies=[Depends(require_api_key)])
+def api_move_job(job_id: str, req: MoveRequest):
+    return move_job(job_id, req)
+
+
+@app.post("/api/v1/jobs/{job_id}/requeue", dependencies=[Depends(require_api_key)])
+def api_requeue_job(job_id: str):
+    return requeue_job(job_id)
+
+
+# Settings (public) --------------------------------------------------------
+
+@app.get("/api/v1/settings", dependencies=[Depends(require_api_key)])
+def api_get_settings():
+    return get_settings()
+
+
+@app.patch("/api/v1/settings", dependencies=[Depends(require_api_key)])
+def api_patch_settings(req: SettingsUpdate):
+    return patch_settings(req)
+
+
+# System (public) ---------------------------------------------------------
+
+@app.get("/api/v1/version", dependencies=[Depends(require_api_key)])
+def api_get_version():
+    return get_version()
+
+
+@app.post("/api/v1/system/shutdown", dependencies=[Depends(require_api_key)])
+async def api_system_shutdown():
+    return await system_shutdown()
 
 
 @app.post("/jobs/{job_id}/move")
@@ -187,10 +479,6 @@ def move_job(job_id: str, req: MoveRequest):
         raise HTTPException(409, "cannot move an active job")
     state.move_job(job_id, req.new_index)
     return {"ok": True}
-
-
-class RequeueRequest(BaseModel):
-    pass
 
 
 @app.post("/jobs/{job_id}/requeue")
@@ -259,16 +547,6 @@ def get_settings():
     return config.snapshot()
 
 
-class SettingsUpdate(BaseModel):
-    plotter_model: int | None = Field(None, ge=1, le=8)
-    pause_between_layers_default: bool | None = None
-    pause_after_job_default: bool | None = None
-    delete_on_complete_default: bool | None = None
-    speed_pendown_default: int | None = Field(None, ge=1, le=110)
-    speed_penup_default: int | None = Field(None, ge=1, le=110)
-    accel_default: int | None = Field(None, ge=1, le=100)
-
-
 @app.patch("/settings")
 def patch_settings(req: SettingsUpdate):
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
@@ -309,6 +587,29 @@ async def system_shutdown():
 
 @app.websocket("/ws/state")
 async def ws_state(ws: WebSocket):
+    await ws.accept()
+    state.add_client(ws)
+    try:
+        await ws.send_json({"type": "state", **state.snapshot()})
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        state.remove_client(ws)
+
+
+@app.websocket("/api/v1/ws/state")
+async def api_ws_state(ws: WebSocket):
+    # Depends() doesn't work on websocket routes — check the header by hand.
+    # Also accept the key as `?api_key=...` for clients that can't easily set
+    # custom headers on a WebSocket handshake (e.g. browser WebSocket API).
+    api_key = ws.headers.get("x-api-key") or ws.query_params.get("api_key")
+    if not api_key or api_key != config.API_KEY:
+        # Calling close() before accept() rejects the upgrade — Starlette
+        # responds to the handshake with HTTP 403 instead of completing it.
+        await ws.close()
+        return
     await ws.accept()
     state.add_client(ws)
     try:
