@@ -35,6 +35,9 @@ function statusLabel(key) {
 
 let appSettings = {
   plotter_model: 2,
+  pause_between_layers_default: true,
+  pause_after_job_default: true,
+  delete_on_complete_default: false,
   speed_pendown_default: 25,
   speed_penup_default: 75,
   accel_default: 75,
@@ -128,8 +131,9 @@ async function uploadAndQueue(file) {
       svg_id: svg.id,
       filename: svg.filename || file.name,
       layer_selections,
-      pause_between_layers: true,
-      pause_after_job: true,
+      pause_between_layers: appSettings.pause_between_layers_default,
+      pause_after_job: appSettings.pause_after_job_default,
+      delete_on_complete: appSettings.delete_on_complete_default,
       paper_w_mm: w,
       paper_h_mm: h,
       margin_top_mm: 0,
@@ -242,6 +246,7 @@ function createCardForJob(job) {
   card.querySelector(".accel").value = job.accel;
   card.querySelector(".pause-between-layers").checked = job.pause_between_layers;
   card.querySelector(".pause-after-job").checked = job.pause_after_job;
+  card.querySelector(".delete-on-complete").checked = !!job.delete_on_complete;
 
   // Clicking the card header toggles expansion; action buttons stop propagation.
   card.querySelector(".job-card-head").addEventListener("click", () => toggleCardExpanded(card));
@@ -278,6 +283,7 @@ function createCardForJob(job) {
   });
   card.querySelector(".pause-between-layers").addEventListener("change", () => queueCardUpdate(card));
   card.querySelector(".pause-after-job").addEventListener("change", () => queueCardUpdate(card));
+  card.querySelector(".delete-on-complete").addEventListener("change", () => queueCardUpdate(card));
   [card.querySelector(".speed-pendown"),
    card.querySelector(".speed-penup"),
    card.querySelector(".accel")]
@@ -858,6 +864,7 @@ async function sendCardUpdate(card, immediateUpdates) {
     updates.accel = parseInt(card.querySelector(".accel").value);
     updates.pause_between_layers = card.querySelector(".pause-between-layers").checked;
     updates.pause_after_job = card.querySelector(".pause-after-job").checked;
+    updates.delete_on_complete = card.querySelector(".delete-on-complete").checked;
   }
   try {
     await fetch(`/jobs/${card.dataset.id}`, {
@@ -1007,6 +1014,9 @@ function escapeHtml(s) {
 const settingsBtn = $("settings-btn");
 const settingsModal = $("settings-modal");
 const settingsPlotterModel = $("settings-plotter-model");
+const settingsPauseBetweenLayers = $("settings-pause-between-layers");
+const settingsPauseAfterJob = $("settings-pause-after-job");
+const settingsDeleteOnComplete = $("settings-delete-on-complete");
 const settingsSpeedPendown = $("settings-speed-pendown");
 const settingsSpeedPenup = $("settings-speed-penup");
 const settingsAccel = $("settings-accel");
@@ -1018,6 +1028,9 @@ $("settings-save").addEventListener("click", saveSettings);
 function applyAppSettings(data) {
   appSettings = {
     plotter_model: data.plotter_model ?? appSettings.plotter_model,
+    pause_between_layers_default: data.pause_between_layers_default ?? appSettings.pause_between_layers_default,
+    pause_after_job_default: data.pause_after_job_default ?? appSettings.pause_after_job_default,
+    delete_on_complete_default: data.delete_on_complete_default ?? appSettings.delete_on_complete_default,
     speed_pendown_default: data.speed_pendown_default ?? appSettings.speed_pendown_default,
     speed_penup_default: data.speed_penup_default ?? appSettings.speed_penup_default,
     accel_default: data.accel_default ?? appSettings.accel_default,
@@ -1038,6 +1051,9 @@ async function openSettings() {
     const data = await res.json();
     applyAppSettings(data);
     settingsPlotterModel.value = String(data.plotter_model || 2);
+    settingsPauseBetweenLayers.checked = data.pause_between_layers_default ?? true;
+    settingsPauseAfterJob.checked = data.pause_after_job_default ?? true;
+    settingsDeleteOnComplete.checked = data.delete_on_complete_default ?? false;
     settingsSpeedPendown.value = String(data.speed_pendown_default ?? 25);
     settingsSpeedPenup.value = String(data.speed_penup_default ?? 75);
     settingsAccel.value = String(data.accel_default ?? 75);
@@ -1054,6 +1070,9 @@ async function saveSettings() {
   try {
     const body = {
       plotter_model: parseInt(settingsPlotterModel.value),
+      pause_between_layers_default: settingsPauseBetweenLayers.checked,
+      pause_after_job_default: settingsPauseAfterJob.checked,
+      delete_on_complete_default: settingsDeleteOnComplete.checked,
       speed_pendown_default: parseInt(settingsSpeedPendown.value),
       speed_penup_default: parseInt(settingsSpeedPenup.value),
       accel_default: parseInt(settingsAccel.value),
@@ -1086,6 +1105,12 @@ for (const base of ["settings-speed-pendown", "settings-speed-penup", "settings-
     updateSliderProgress(slider);
   });
   updateSliderProgress(slider);
+}
+
+function resetSettingsJobOptions() {
+  settingsPauseBetweenLayers.checked = true;
+  settingsPauseAfterJob.checked = true;
+  settingsDeleteOnComplete.checked = false;
 }
 
 // Wire collapsible sections + reset button inside the Settings modal
@@ -1150,6 +1175,7 @@ settingsModal.querySelectorAll(".card-section-reset").forEach((btn) => {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     if (btn.dataset.reset === "settings-speed") resetSettingsSpeed();
+    else if (btn.dataset.reset === "settings-job-options") resetSettingsJobOptions();
   });
 });
 

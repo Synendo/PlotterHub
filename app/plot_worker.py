@@ -620,6 +620,11 @@ def _run_staged_loop(job_id: str, svg_path: Path, first_mode: str) -> None:
             continue
         # No more stages
         state.update_job(job_id, status="completed", resume_path=None)
+        if job.get("delete_on_complete", False):
+            from .main import delete_svg_files
+            svg_id = job.get("svg_id")
+            state.remove_job(job_id)
+            delete_svg_files(svg_id)
         return
 
 

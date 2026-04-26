@@ -70,6 +70,7 @@ class JobCreate(BaseModel):
     layer_selections: list[dict]
     pause_between_layers: bool = True
     pause_after_job: bool = True
+    delete_on_complete: bool = False
     paper_w_mm: float
     paper_h_mm: float
     margin_top_mm: float = 0.0
@@ -90,6 +91,7 @@ class JobUpdate(BaseModel):
     layer_selections: list[dict] | None = None
     pause_between_layers: bool | None = None
     pause_after_job: bool | None = None
+    delete_on_complete: bool | None = None
     paper_w_mm: float | None = None
     paper_h_mm: float | None = None
     margin_top_mm: float | None = None
@@ -146,6 +148,19 @@ def update_job(job_id: str, req: JobUpdate):
     return state.get_job(job_id)
 
 
+def delete_svg_files(svg_id: str | None) -> None:
+    # Delete the source SVG and every derivative (preview / filtered / staged /
+    # resume). svg_id is a uuid4 fragment, 1:1 with a job, so globbing on it
+    # can't hit another job's files.
+    if not svg_id:
+        return
+    for p in UPLOAD_DIR.glob(f"{svg_id}.*"):
+        try:
+            p.unlink()
+        except OSError:
+            log.exception("delete_svg_files: failed to unlink %s", p)
+
+
 @app.delete("/jobs/{job_id}")
 def delete_job(job_id: str):
     j = state.get_job(job_id)
@@ -155,15 +170,7 @@ def delete_job(job_id: str):
         raise HTTPException(409, "cannot remove an active job")
     svg_id = j.get("svg_id")
     state.remove_job(job_id)
-    # Delete the source SVG and every derivative (preview / filtered / staged /
-    # resume). svg_id is a uuid4 fragment, 1:1 with a job, so globbing on it
-    # can't hit another job's files.
-    if svg_id:
-        for p in UPLOAD_DIR.glob(f"{svg_id}.*"):
-            try:
-                p.unlink()
-            except OSError:
-                log.exception("delete_job: failed to unlink %s", p)
+    delete_svg_files(svg_id)
     return {"ok": True}
 
 
@@ -254,6 +261,9 @@ def get_settings():
 
 class SettingsUpdate(BaseModel):
     plotter_model: int | None = Field(None, ge=1, le=8)
+    pause_between_layers_default: bool | None = None
+    pause_after_job_default: bool | None = None
+    delete_on_complete_default: bool | None = None
     speed_pendown_default: int | None = Field(None, ge=1, le=110)
     speed_penup_default: int | None = Field(None, ge=1, le=110)
     accel_default: int | None = Field(None, ge=1, le=100)

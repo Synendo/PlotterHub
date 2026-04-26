@@ -64,6 +64,29 @@
         </div>
       </section>
 
+      <section class="card-section" data-section="job-options">
+        <header class="card-section-head">
+          <span class="card-section-title">Job Options</span>
+          <button class="icon-btn card-section-reset" data-reset="settings-job-options" title="Restore defaults" aria-label="Restore default job options">↺</button>
+          <span class="card-section-caret" aria-hidden="true">▼</span>
+        </header>
+        <div class="card-section-body">
+          <p class="muted">Defaults for new jobs. Per-job settings will override these defaults.</p>
+          <label class="inline-check">
+            <input type="checkbox" id="settings-pause-between-layers" />
+            <span>Pause between layers for pen changes</span>
+          </label>
+          <label class="inline-check">
+            <input type="checkbox" id="settings-pause-after-job" />
+            <span>Pause after this job (for paper / pen change before the next one)</span>
+          </label>
+          <label class="inline-check">
+            <input type="checkbox" id="settings-delete-on-complete" />
+            <span>Delete on complete (remove the job from the queue when finished)</span>
+          </label>
+        </div>
+      </section>
+
       <section class="card-section" data-section="plotter-speed">
         <header class="card-section-head">
           <span class="card-section-title">Plotter Speed</span>
@@ -342,6 +365,10 @@
                 <label class="inline-check">
                   <input type="checkbox" class="pause-after-job" checked />
                   <span>Pause after this job (for paper / pen change before the next one)</span>
+                </label>
+                <label class="inline-check">
+                  <input type="checkbox" class="delete-on-complete" />
+                  <span>Delete on complete (remove the job from the queue when finished)</span>
                 </label>
               </div>
             </section>
