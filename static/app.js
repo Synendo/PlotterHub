@@ -665,7 +665,7 @@ function updateCard(card, job) {
   if (layerCount) {
     subParts.push(`${layerCount} layer${layerCount > 1 ? "s" : ""}`);
   }
-  if (job.estimated_total_seconds) subParts.push(`~${formatDuration(Math.round(job.estimated_total_seconds))}`);
+  if (job.estimated_total_seconds) subParts.push(formatDuration(Math.round(job.estimated_total_seconds)));
   card.querySelector(".job-sub").textContent = subParts.join(" · ");
 
   const pill = card.querySelector(".job-status-pill");
@@ -1038,10 +1038,21 @@ function renderStages(card, job) {
   if (!job.stages || job.stages.length <= 1) { wrap.hidden = true; ol.innerHTML = ""; return; }
   wrap.hidden = false;
   ol.innerHTML = "";
+  // Pull each layer's type so stage rows can echo the icon shown in the
+  // layer list above. With pause_between_layers=true (the only case where
+  // this list is rendered) each stage has exactly one layer, but joining
+  // the icons copes if that ever changes.
+  const typeByIndex = new Map(
+    (job.layer_selections || []).map((s) => [s.index, s.type])
+  );
   job.stages.forEach((s, i) => {
     const li = document.createElement("li");
     li.className = `stage ${s.status}`;
+    const icons = (s.layer_indices || [])
+      .map((idx) => layerTypeIcon(typeByIndex.get(idx)))
+      .join("");
     li.innerHTML = `<span class="stage-num">${i + 1}</span>
+      ${icons}
       <span class="stage-label">${escapeHtml((s.labels || []).join(", "))}</span>
       <span class="stage-status">${s.status}</span>`;
     ol.appendChild(li);
