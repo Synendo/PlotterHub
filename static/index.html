@@ -87,7 +87,44 @@
         </div>
       </section>
 
-      <section class="card-section" data-section="plotter-speed">
+      <section class="card-section collapsed" data-section="optimize">
+        <header class="card-section-head">
+          <span class="card-section-title">SVG Optimization (vpype)</span>
+          <button class="icon-btn card-section-reset" data-reset="settings-optimize" title="Restore defaults" aria-label="Restore default optimization settings">↺</button>
+          <span class="card-section-caret" aria-hidden="true">▼</span>
+        </header>
+        <div class="card-section-body">
+          <p class="muted">Defaults for new jobs. Per-job settings will override these defaults.</p>
+          <label class="inline-check">
+            <input type="checkbox" id="settings-optimize" />
+            <span>Optimize SVG before plotting</span>
+          </label>
+          <div class="optimize-options">
+            <label class="inline-check">
+              <input type="checkbox" id="settings-optimize-linemerge" />
+              <span>Merge nearby endpoints (linemerge)</span>
+            </label>
+            <label class="inline-check">
+              <input type="checkbox" id="settings-optimize-linesimplify" />
+              <span>Simplify paths (linesimplify)</span>
+            </label>
+            <label class="inline-check">
+              <input type="checkbox" id="settings-optimize-linesort" />
+              <span>Reorder for less travel (linesort)</span>
+            </label>
+            <label class="inline-check">
+              <input type="checkbox" id="settings-optimize-reloop" />
+              <span>Randomize closed-path start (reloop)</span>
+            </label>
+            <label class="field">
+              <span class="field-label">Tolerance (mm) — used by linemerge + linesimplify</span>
+              <input type="number" id="settings-optimize-tolerance" min="0.01" max="10" step="0.01" value="0.10" />
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card-section collapsed" data-section="plotter-speed">
         <header class="card-section-head">
           <span class="card-section-title">Plotter Speed</span>
           <button class="icon-btn card-section-reset" data-reset="settings-speed" title="Restore defaults" aria-label="Restore default plotter speed">↺</button>
@@ -187,7 +224,7 @@
           <button class="icon-btn job-move-down" title="Move down">↓</button>
           <button class="icon-btn job-requeue" title="Plot again" hidden>↻</button>
           <button class="icon-btn job-delete" title="Remove">✕</button>
-          <span class="expand-caret" aria-hidden="true">▼</span>
+          <span class="card-section-caret" aria-hidden="true">▼</span>
         </div>
       </header>
       <div class="job-error" hidden></div>
@@ -360,6 +397,41 @@
                       <input type="range" class="transform-offset-y-slider" step="0.5" value="0" />
                       <input type="number" class="transform-offset-y" step="0.5" value="0" />
                     </div>
+                  </label>
+                </div>
+              </div>
+            </section>
+            <section class="card-section collapsed" data-section="optimize">
+              <header class="card-section-head">
+                <span class="card-section-title">Optimization (vpype)</span>
+                <button class="icon-btn card-section-reset" data-reset="optimize" title="Restore optimization defaults" aria-label="Restore optimization defaults">↺</button>
+                <span class="card-section-caret" aria-hidden="true">▼</span>
+              </header>
+              <div class="card-section-body">
+                <label class="inline-check">
+                  <input type="checkbox" class="optimize" />
+                  <span>Optimize SVG before plotting</span>
+                </label>
+                <div class="optimize-options">
+                  <label class="inline-check">
+                    <input type="checkbox" class="optimize-linemerge" />
+                    <span>Merge nearby endpoints (linemerge)</span>
+                  </label>
+                  <label class="inline-check">
+                    <input type="checkbox" class="optimize-linesimplify" />
+                    <span>Simplify paths (linesimplify)</span>
+                  </label>
+                  <label class="inline-check">
+                    <input type="checkbox" class="optimize-linesort" />
+                    <span>Reorder for less travel (linesort)</span>
+                  </label>
+                  <label class="inline-check">
+                    <input type="checkbox" class="optimize-reloop" />
+                    <span>Randomize closed-path start (reloop)</span>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Tolerance (mm) — used by linemerge + linesimplify</span>
+                    <input type="number" class="optimize-tolerance" min="0.01" max="10" step="0.01" value="0.10" />
                   </label>
                 </div>
               </div>

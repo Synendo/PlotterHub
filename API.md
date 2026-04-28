@@ -76,6 +76,16 @@ All fields are optional. Unspecified booleans, speeds, and `selected` flags fall
   "speed_penup":   80,                // 1–110
   "accel":         50,                // 1–100
 
+  // SVG optimization (vpype). Omit any field to inherit the server default.
+  // The optimized SVG is cached per job and reused across re-plots; changing
+  // any field below invalidates the cache and re-runs the pipeline.
+  "optimize":              true,      // Master toggle. When false the rest is ignored.
+  "optimize_tolerance_mm": 0.10,      // 0.01–10.0; used by linemerge + linesimplify.
+  "optimize_linemerge":    true,      // Stitch lines whose endpoints are within tolerance.
+  "optimize_linesimplify": true,      // Reduce vertex count (Douglas-Peucker).
+  "optimize_linesort":     true,      // Reorder lines to cut pen-up travel.
+  "optimize_reloop":       true,      // Randomize closed-path start (cosmetic).
+
   "layers": [                         // Per-layer overrides keyed by SVG layer index.
     {
       "index": 0,                     // Required — the 0-based Inkscape layer index.
@@ -171,12 +181,17 @@ All five endpoints take no body, return `{"ok": true}` on success, and respond `
 #### Lifecycle cheat sheet
 
 ```
-queued ──plot──► planning ──► plotting ──pause──► paused ──resume──► plotting
-                                                                       │
-                                                              ──continue──► (next stage / next job)
-                                                                       │
-                                                              ──cancel──► homing ──► cancelled
+queued ──plot──► [optimizing] ──► planning ──► plotting ──pause──► paused ──resume──► plotting
+                                                                                         │
+                                                                                ──continue──► (next stage / next job)
+                                                                                         │
+                                                                                ──cancel──► homing ──► cancelled
 ```
+
+`optimizing` is only entered when the job has `optimize: true` AND its cached
+optimized SVG either doesn't exist or was produced with different parameters.
+On subsequent re-plots of the same job the cache is reused and the worker
+goes straight to `planning`.
 
 #### Example
 
@@ -225,6 +240,9 @@ Editable fields:
 | `speed_pendown`, `speed_penup` | int | 1–110 |
 | `accel` | int | 1–100 |
 | `pause_between_layers`, `pause_after_job`, `delete_on_complete` | bool | |
+| `optimize` | bool | Run the vpype optimization pipeline before planning. |
+| `optimize_tolerance_mm` | number | 0.01–10.0 |
+| `optimize_linemerge`, `optimize_linesimplify`, `optimize_linesort`, `optimize_reloop` | bool | Per-step toggles for the vpype pipeline. |
 | `layer_selections` | array | `[{index, label, type?}]` — drives which layers plot. |
 
 Returns the full updated job record. **`409 Conflict`** if the job is currently active (`plotting`, `planning`, `paused`, `awaiting_pen_change`, `homing`).
@@ -300,7 +318,13 @@ Returns the current snapshot:
   "delete_on_complete_default": false,
   "speed_pendown_default": 25,              // 1–110
   "speed_penup_default": 75,                // 1–110
-  "accel_default": 75                       // 1–100
+  "accel_default": 75,                      // 1–100
+  "optimize_default": false,                // Run vpype before plotting on new jobs
+  "optimize_tolerance_default_mm": 0.10,    // 0.01–10.0
+  "optimize_linemerge_default": true,
+  "optimize_linesimplify_default": true,
+  "optimize_linesort_default": true,
+  "optimize_reloop_default": true
 }
 ```
 
@@ -317,6 +341,9 @@ Body is sparse JSON — only the fields you send are applied. Returns the new sn
 | `speed_pendown_default` | int 1–110 |
 | `speed_penup_default` | int 1–110 |
 | `accel_default` | int 1–100 |
+| `optimize_default` | bool |
+| `optimize_tolerance_default_mm` | float 0.01–10.0 |
+| `optimize_linemerge_default`, `optimize_linesimplify_default`, `optimize_linesort_default`, `optimize_reloop_default` | bool |
 
 Out-of-range values return `400`. The `api_key` field is **not** writable through this endpoint — to rotate the key, edit `config.json` on the Pi and restart the service.
 

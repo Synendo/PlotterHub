@@ -19,6 +19,7 @@ const queueProgress = $("queue-progress");
 const STATUS_LABELS = {
   idle: "Idle",
   queued: "Queued",
+  optimizing: "Optimizing",
   planning: "Planning",
   plotting: "Plotting",
   paused: "Paused",
@@ -41,6 +42,12 @@ let appSettings = {
   speed_pendown_default: 25,
   speed_penup_default: 75,
   accel_default: 75,
+  optimize_default: false,
+  optimize_tolerance_default_mm: 0.10,
+  optimize_linemerge_default: true,
+  optimize_linesimplify_default: true,
+  optimize_linesort_default: true,
+  optimize_reloop_default: true,
 };
 
 // Paper size database (portrait dims). Landscape swaps them.
@@ -87,7 +94,7 @@ async function readErr(res) {
 // ───── Upload ────────────────────────────────────────────────────────────
 
 fileInput.addEventListener("change", (e) => {
-  for (const f of e.target.files) uploadAndQueue(f);
+  handleDroppedFiles(e.target.files);
   fileInput.value = "";
 });
 dropZone.addEventListener("dragover", (e) => {
@@ -98,8 +105,32 @@ dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag"));
 dropZone.addEventListener("drop", (e) => {
   e.preventDefault();
   dropZone.classList.remove("drag");
-  for (const f of e.dataTransfer.files) uploadAndQueue(f);
+  handleDroppedFiles(e.dataTransfer.files);
 });
+
+// The native `accept=".svg,..."` only filters the file picker; drag-and-drop
+// bypasses it. Reject non-SVGs up front so the user sees a clean message
+// instead of an XML parse error from the server.
+function isSvgFile(file) {
+  if (file.type === "image/svg+xml") return true;
+  return /\.svg$/i.test(file.name || "");
+}
+
+function handleDroppedFiles(fileList) {
+  const files = Array.from(fileList || []);
+  const ok = files.filter(isSvgFile);
+  const bad = files.filter((f) => !isSvgFile(f));
+  if (bad.length) {
+    uploadError.textContent = bad.length === 1
+      ? `${bad[0].name} is not an SVG file.`
+      : `${bad.length} files were skipped — only .svg files are accepted.`;
+    uploadError.hidden = false;
+  } else {
+    uploadError.hidden = true;
+    uploadError.textContent = "";
+  }
+  for (const f of ok) uploadAndQueue(f);
+}
 
 async function uploadAndQueue(file) {
   const label = dropZone.querySelector("span");
@@ -148,6 +179,12 @@ async function uploadAndQueue(file) {
       speed_pendown: appSettings.speed_pendown_default,
       speed_penup: appSettings.speed_penup_default,
       accel: appSettings.accel_default,
+      optimize: appSettings.optimize_default,
+      optimize_tolerance_mm: appSettings.optimize_tolerance_default_mm,
+      optimize_linemerge: appSettings.optimize_linemerge_default,
+      optimize_linesimplify: appSettings.optimize_linesimplify_default,
+      optimize_linesort: appSettings.optimize_linesort_default,
+      optimize_reloop: appSettings.optimize_reloop_default,
     };
     const jobRes = await fetch("/jobs", {
       method: "POST",
@@ -304,6 +341,13 @@ function createCardForJob(job) {
   card.querySelector(".pause-between-layers").checked = job.pause_between_layers;
   card.querySelector(".pause-after-job").checked = job.pause_after_job;
   card.querySelector(".delete-on-complete").checked = !!job.delete_on_complete;
+  card.querySelector(".optimize").checked = !!job.optimize;
+  card.querySelector(".optimize-linemerge").checked = job.optimize_linemerge !== false;
+  card.querySelector(".optimize-linesimplify").checked = job.optimize_linesimplify !== false;
+  card.querySelector(".optimize-linesort").checked = job.optimize_linesort !== false;
+  card.querySelector(".optimize-reloop").checked = job.optimize_reloop !== false;
+  card.querySelector(".optimize-tolerance").value = (job.optimize_tolerance_mm ?? 0.10).toFixed(2);
+  applyOptimizeEnabledStyle(card);
 
   // Clicking the card header toggles expansion; action buttons stop propagation.
   card.querySelector(".job-card-head").addEventListener("click", () => toggleCardExpanded(card));
@@ -341,6 +385,26 @@ function createCardForJob(job) {
   card.querySelector(".pause-between-layers").addEventListener("change", () => queueCardUpdate(card));
   card.querySelector(".pause-after-job").addEventListener("change", () => queueCardUpdate(card));
   card.querySelector(".delete-on-complete").addEventListener("change", () => queueCardUpdate(card));
+  card.querySelector(".optimize").addEventListener("change", () => {
+    // Master ON while every sub-option is off would be a no-op pipeline —
+    // re-enable all four so the toggle actually does something.
+    const master = card.querySelector(".optimize");
+    if (master.checked) {
+      const subs = ["linemerge", "linesimplify", "linesort", "reloop"];
+      const anyOn = subs.some((s) => card.querySelector(".optimize-" + s).checked);
+      if (!anyOn) {
+        subs.forEach((s) => { card.querySelector(".optimize-" + s).checked = true; });
+      }
+    }
+    applyOptimizeEnabledStyle(card);
+    queueCardUpdate(card);
+  });
+  ["optimize-linemerge", "optimize-linesimplify", "optimize-linesort", "optimize-reloop"]
+    .forEach((cls) => card.querySelector("." + cls).addEventListener("change", () => {
+      syncOptimizeMaster(card);
+      queueCardUpdate(card);
+    }));
+  card.querySelector(".optimize-tolerance").addEventListener("change", () => queueCardUpdate(card));
   [card.querySelector(".speed-pendown"),
    card.querySelector(".speed-penup"),
    card.querySelector(".accel")]
@@ -374,7 +438,9 @@ function createCardForJob(job) {
     head.addEventListener("click", (e) => {
       if (e.target.closest(".card-section-reset")) return;
       head.parentElement.classList.toggle("collapsed");
+      syncSectionCaret(head.parentElement);
     });
+    syncSectionCaret(head.parentElement);
   });
   // Reset buttons
   card.querySelectorAll(".card-section-reset").forEach((btn) => {
@@ -384,6 +450,7 @@ function createCardForJob(job) {
       if (kind === "margins") resetMargins(card);
       else if (kind === "transform") resetTransform(card);
       else if (kind === "parameters") resetParameters(card);
+      else if (kind === "optimize") resetOptimize(card);
     });
   });
 
@@ -408,6 +475,7 @@ function createCardForJob(job) {
     card.classList.add("expanded");
     card.querySelector(".job-body").hidden = false;
   }
+  syncJobCardCaret(card);
 
   return card;
 }
@@ -472,6 +540,22 @@ function guessPresetFromDims(w, h) {
   return { preset: "Custom", orientation: rW >= rH ? "landscape" : "portrait" };
 }
 
+function setCaretTooltip(caret, isExpanded) {
+  if (caret) caret.title = isExpanded ? "Collapse" : "Expand";
+}
+
+function syncSectionCaret(section) {
+  if (!section) return;
+  const caret = section.querySelector(":scope > .card-section-head > .card-section-caret");
+  setCaretTooltip(caret, !section.classList.contains("collapsed"));
+}
+
+function syncJobCardCaret(card) {
+  if (!card) return;
+  const caret = card.querySelector(".job-card-head .card-section-caret");
+  setCaretTooltip(caret, card.classList.contains("expanded"));
+}
+
 function setSegmentedValue(seg, val) {
   seg.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.val === val));
 }
@@ -484,6 +568,7 @@ function toggleCardExpanded(card) {
   const body = card.querySelector(".job-body");
   body.hidden = !body.hidden;
   card.classList.toggle("expanded", !body.hidden);
+  syncJobCardCaret(card);
   if (!body.hidden) {
     const job = serverState.queue.find((j) => j.id === card.dataset.id);
     if (job) {
@@ -556,6 +641,7 @@ function updateCard(card, job) {
     }
     ctx.finishedPendingCollapse = false;
   }
+  syncJobCardCaret(card);
 
   // Re-queue button visible only when the job has actually been plotted at
   // least once (started_at set) AND is now in a terminal state. This avoids
@@ -624,6 +710,34 @@ function resetTransform(card) {
     const el = card.querySelector(sel);
     if (el) { el.value = val; dispatchValueChange(el); }
   }
+}
+
+function applyOptimizeEnabledStyle(card) {
+  const on = card.querySelector(".optimize").checked;
+  const opts = card.querySelector("[data-section='optimize'] .optimize-options");
+  if (opts) opts.classList.toggle("disabled", !on);
+}
+
+// Keep the master toggle consistent with the sub-options: if all four steps
+// are off, the master can't do anything, so untick it.
+function syncOptimizeMaster(card) {
+  const subs = ["optimize-linemerge", "optimize-linesimplify", "optimize-linesort", "optimize-reloop"];
+  const anyOn = subs.some((cls) => card.querySelector("." + cls).checked);
+  const master = card.querySelector(".optimize");
+  if (!anyOn && master.checked) master.checked = false;
+  applyOptimizeEnabledStyle(card);
+}
+
+function resetOptimize(card) {
+  card.querySelector(".optimize").checked = !!appSettings.optimize_default;
+  card.querySelector(".optimize-linemerge").checked = !!appSettings.optimize_linemerge_default;
+  card.querySelector(".optimize-linesimplify").checked = !!appSettings.optimize_linesimplify_default;
+  card.querySelector(".optimize-linesort").checked = !!appSettings.optimize_linesort_default;
+  card.querySelector(".optimize-reloop").checked = !!appSettings.optimize_reloop_default;
+  card.querySelector(".optimize-tolerance").value =
+    (appSettings.optimize_tolerance_default_mm ?? 0.10).toFixed(2);
+  applyOptimizeEnabledStyle(card);
+  queueCardUpdate(card);
 }
 
 function resetParameters(card) {
@@ -932,6 +1046,13 @@ async function sendCardUpdate(card, immediateUpdates) {
     updates.pause_between_layers = card.querySelector(".pause-between-layers").checked;
     updates.pause_after_job = card.querySelector(".pause-after-job").checked;
     updates.delete_on_complete = card.querySelector(".delete-on-complete").checked;
+    updates.optimize = card.querySelector(".optimize").checked;
+    updates.optimize_linemerge = card.querySelector(".optimize-linemerge").checked;
+    updates.optimize_linesimplify = card.querySelector(".optimize-linesimplify").checked;
+    updates.optimize_linesort = card.querySelector(".optimize-linesort").checked;
+    updates.optimize_reloop = card.querySelector(".optimize-reloop").checked;
+    const tol = parseFloat(card.querySelector(".optimize-tolerance").value);
+    if (isFinite(tol) && tol > 0) updates.optimize_tolerance_mm = tol;
   }
   try {
     await fetch(`/jobs/${card.dataset.id}`, {
@@ -1018,8 +1139,11 @@ function applyTopControls() {
   } else {
     statusEl.textContent = `${statusLabel(status)}${active.filename ? ` · ${active.filename}` : ""}`;
     statusEl.className = `status ${status}`;
-    topMessage.textContent = active.error ? `Error: ${active.error}` :
-      (status === "awaiting_pen_change" ? "Swap the pen if needed, then click Continue for the next layer." : "");
+    let msg = "";
+    if (active.error) msg = `Error: ${active.error}`;
+    else if (status === "awaiting_pen_change") msg = "Swap the pen if needed, then click Continue for the next layer.";
+    else if (status === "optimizing") msg = "Optimizing SVG…";
+    topMessage.textContent = msg;
     topMessage.className = active.error ? "error" : "muted";
   }
 
@@ -1101,6 +1225,12 @@ const settingsDeleteOnComplete = $("settings-delete-on-complete");
 const settingsSpeedPendown = $("settings-speed-pendown");
 const settingsSpeedPenup = $("settings-speed-penup");
 const settingsAccel = $("settings-accel");
+const settingsOptimize = $("settings-optimize");
+const settingsOptimizeLinemerge = $("settings-optimize-linemerge");
+const settingsOptimizeLinesimplify = $("settings-optimize-linesimplify");
+const settingsOptimizeLinesort = $("settings-optimize-linesort");
+const settingsOptimizeReloop = $("settings-optimize-reloop");
+const settingsOptimizeTolerance = $("settings-optimize-tolerance");
 settingsBtn.addEventListener("click", openSettings);
 $("settings-cancel").addEventListener("click", () => { settingsModal.hidden = true; });
 settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) settingsModal.hidden = true; });
@@ -1122,6 +1252,12 @@ function applyAppSettings(data) {
     speed_pendown_default: data.speed_pendown_default ?? appSettings.speed_pendown_default,
     speed_penup_default: data.speed_penup_default ?? appSettings.speed_penup_default,
     accel_default: data.accel_default ?? appSettings.accel_default,
+    optimize_default: data.optimize_default ?? appSettings.optimize_default,
+    optimize_tolerance_default_mm: data.optimize_tolerance_default_mm ?? appSettings.optimize_tolerance_default_mm,
+    optimize_linemerge_default: data.optimize_linemerge_default ?? appSettings.optimize_linemerge_default,
+    optimize_linesimplify_default: data.optimize_linesimplify_default ?? appSettings.optimize_linesimplify_default,
+    optimize_linesort_default: data.optimize_linesort_default ?? appSettings.optimize_linesort_default,
+    optimize_reloop_default: data.optimize_reloop_default ?? appSettings.optimize_reloop_default,
   };
 }
 
@@ -1146,6 +1282,13 @@ async function openSettings() {
     settingsSpeedPendown.value = String(data.speed_pendown_default ?? 25);
     settingsSpeedPenup.value = String(data.speed_penup_default ?? 75);
     settingsAccel.value = String(data.accel_default ?? 75);
+    settingsOptimize.checked = !!(data.optimize_default ?? false);
+    settingsOptimizeLinemerge.checked = data.optimize_linemerge_default !== false;
+    settingsOptimizeLinesimplify.checked = data.optimize_linesimplify_default !== false;
+    settingsOptimizeLinesort.checked = data.optimize_linesort_default !== false;
+    settingsOptimizeReloop.checked = data.optimize_reloop_default !== false;
+    settingsOptimizeTolerance.value = (data.optimize_tolerance_default_mm ?? 0.10).toFixed(2);
+    applySettingsOptimizeEnabledStyle();
     for (const sel of ["#settings-speed-pendown-slider", "#settings-speed-penup-slider", "#settings-accel-slider"]) {
       const s = document.querySelector(sel);
       const n = document.querySelector(sel.replace("-slider", ""));
@@ -1157,6 +1300,7 @@ async function openSettings() {
 
 async function saveSettings() {
   try {
+    const tol = parseFloat(settingsOptimizeTolerance.value);
     const body = {
       plotter_model: parseInt(settingsPlotterModel.value),
       pause_between_layers_default: settingsPauseBetweenLayers.checked,
@@ -1165,6 +1309,12 @@ async function saveSettings() {
       speed_pendown_default: parseInt(settingsSpeedPendown.value),
       speed_penup_default: parseInt(settingsSpeedPenup.value),
       accel_default: parseInt(settingsAccel.value),
+      optimize_default: settingsOptimize.checked,
+      optimize_tolerance_default_mm: isFinite(tol) && tol > 0 ? tol : 0.10,
+      optimize_linemerge_default: settingsOptimizeLinemerge.checked,
+      optimize_linesimplify_default: settingsOptimizeLinesimplify.checked,
+      optimize_linesort_default: settingsOptimizeLinesort.checked,
+      optimize_reloop_default: settingsOptimizeReloop.checked,
     };
     const res = await fetch("/settings", {
       method: "PATCH",
@@ -1201,6 +1351,50 @@ function resetSettingsJobOptions() {
   settingsPauseAfterJob.checked = true;
   settingsDeleteOnComplete.checked = false;
 }
+
+function applySettingsOptimizeEnabledStyle() {
+  const optsBody = settingsOptimize?.closest(".card-section-body");
+  const opts = optsBody?.querySelector(".optimize-options");
+  if (opts) opts.classList.toggle("disabled", !settingsOptimize.checked);
+}
+
+function syncSettingsOptimizeMaster() {
+  const anyOn = settingsOptimizeLinemerge.checked
+             || settingsOptimizeLinesimplify.checked
+             || settingsOptimizeLinesort.checked
+             || settingsOptimizeReloop.checked;
+  if (!anyOn && settingsOptimize.checked) settingsOptimize.checked = false;
+  applySettingsOptimizeEnabledStyle();
+}
+
+function resetSettingsOptimize() {
+  settingsOptimize.checked = false;
+  settingsOptimizeLinemerge.checked = true;
+  settingsOptimizeLinesimplify.checked = true;
+  settingsOptimizeLinesort.checked = true;
+  settingsOptimizeReloop.checked = true;
+  settingsOptimizeTolerance.value = (0.10).toFixed(2);
+  applySettingsOptimizeEnabledStyle();
+}
+
+settingsOptimize?.addEventListener("change", () => {
+  if (settingsOptimize.checked) {
+    const anyOn = settingsOptimizeLinemerge.checked
+               || settingsOptimizeLinesimplify.checked
+               || settingsOptimizeLinesort.checked
+               || settingsOptimizeReloop.checked;
+    if (!anyOn) {
+      settingsOptimizeLinemerge.checked = true;
+      settingsOptimizeLinesimplify.checked = true;
+      settingsOptimizeLinesort.checked = true;
+      settingsOptimizeReloop.checked = true;
+    }
+  }
+  applySettingsOptimizeEnabledStyle();
+});
+[settingsOptimizeLinemerge, settingsOptimizeLinesimplify,
+ settingsOptimizeLinesort, settingsOptimizeReloop]
+  .forEach((el) => el?.addEventListener("change", syncSettingsOptimizeMaster));
 
 // Wire collapsible sections + reset button inside the Settings modal
 function resetSettingsSpeed() {
@@ -1258,13 +1452,16 @@ settingsModal.querySelectorAll(".card-section-head").forEach((head) => {
   head.addEventListener("click", (e) => {
     if (e.target.closest(".card-section-reset")) return;
     head.parentElement.classList.toggle("collapsed");
+    syncSectionCaret(head.parentElement);
   });
+  syncSectionCaret(head.parentElement);
 });
 settingsModal.querySelectorAll(".card-section-reset").forEach((btn) => {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     if (btn.dataset.reset === "settings-speed") resetSettingsSpeed();
     else if (btn.dataset.reset === "settings-job-options") resetSettingsJobOptions();
+    else if (btn.dataset.reset === "settings-optimize") resetSettingsOptimize();
   });
 });
 

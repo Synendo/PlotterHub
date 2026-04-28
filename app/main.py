@@ -58,14 +58,21 @@ def index():
 
 @app.post("/upload")
 async def upload(file: UploadFile = File(...)):
+    data = await file.read()
+    # Sniff the bytes before writing: SVG starts with '<' (optionally after a
+    # UTF-8 BOM and whitespace). Anything binary (JPG/PNG/PDF/...) fails fast
+    # with a clean message rather than the lxml parse trace.
+    head = data.lstrip(b"\xef\xbb\xbf").lstrip()
+    if not head.startswith(b"<"):
+        raise HTTPException(400, "Not an SVG file. Please drop a .svg.")
     svg_id = uuid.uuid4().hex[:8]
     path = UPLOAD_DIR / f"{svg_id}.svg"
-    path.write_bytes(await file.read())
+    path.write_bytes(data)
     try:
         info = svg_utils.parse_layers(path)
-    except Exception as e:
+    except Exception:
         path.unlink(missing_ok=True)
-        raise HTTPException(400, f"invalid SVG: {e}")
+        raise HTTPException(400, "That doesn't look like a valid SVG.")
     return {"id": svg_id, "filename": file.filename or "upload.svg", **info}
 
 
@@ -102,6 +109,12 @@ class JobCreate(BaseModel):
     speed_pendown: int = 25
     speed_penup: int = 75
     accel: int = 75
+    optimize: bool = False
+    optimize_tolerance_mm: float = Field(0.10, ge=0.01, le=10.0)
+    optimize_linemerge: bool = True
+    optimize_linesimplify: bool = True
+    optimize_linesort: bool = True
+    optimize_reloop: bool = True
 
 
 class MoveRequest(BaseModel):
@@ -116,6 +129,12 @@ class SettingsUpdate(BaseModel):
     speed_pendown_default: int | None = Field(None, ge=1, le=110)
     speed_penup_default: int | None = Field(None, ge=1, le=110)
     accel_default: int | None = Field(None, ge=1, le=100)
+    optimize_default: bool | None = None
+    optimize_tolerance_default_mm: float | None = Field(None, ge=0.01, le=10.0)
+    optimize_linemerge_default: bool | None = None
+    optimize_linesimplify_default: bool | None = None
+    optimize_linesort_default: bool | None = None
+    optimize_reloop_default: bool | None = None
 
 
 class JobUpdate(BaseModel):
@@ -139,6 +158,12 @@ class JobUpdate(BaseModel):
     speed_pendown: int | None = None
     speed_penup: int | None = None
     accel: int | None = None
+    optimize: bool | None = None
+    optimize_tolerance_mm: float | None = Field(None, ge=0.01, le=10.0)
+    optimize_linemerge: bool | None = None
+    optimize_linesimplify: bool | None = None
+    optimize_linesort: bool | None = None
+    optimize_reloop: bool | None = None
 
 
 @app.post("/jobs")
@@ -246,6 +271,12 @@ class ApiJobMetadata(BaseModel):
     speed_pendown: int | None = Field(default=None, ge=1, le=110)
     speed_penup: int | None = Field(default=None, ge=1, le=110)
     accel: int | None = Field(default=None, ge=1, le=100)
+    optimize: bool | None = None
+    optimize_tolerance_mm: float | None = Field(default=None, ge=0.01, le=10.0)
+    optimize_linemerge: bool | None = None
+    optimize_linesimplify: bool | None = None
+    optimize_linesort: bool | None = None
+    optimize_reloop: bool | None = None
 
 
 def _resolve_paper(paper: ApiPaperSize | None,
@@ -357,6 +388,12 @@ async def api_create_job(file: UploadFile = File(...),
         "speed_pendown": pick(meta.speed_pendown, config.SPEED_PENDOWN_DEFAULT),
         "speed_penup":   pick(meta.speed_penup,   config.SPEED_PENUP_DEFAULT),
         "accel":         pick(meta.accel,         config.ACCEL_DEFAULT),
+        "optimize":             pick(meta.optimize,             config.OPTIMIZE_DEFAULT),
+        "optimize_tolerance_mm":pick(meta.optimize_tolerance_mm,config.OPTIMIZE_TOLERANCE_DEFAULT_MM),
+        "optimize_linemerge":   pick(meta.optimize_linemerge,   config.OPTIMIZE_LINEMERGE_DEFAULT),
+        "optimize_linesimplify":pick(meta.optimize_linesimplify,config.OPTIMIZE_LINESIMPLIFY_DEFAULT),
+        "optimize_linesort":    pick(meta.optimize_linesort,    config.OPTIMIZE_LINESORT_DEFAULT),
+        "optimize_reloop":      pick(meta.optimize_reloop,      config.OPTIMIZE_RELOOP_DEFAULT),
     }
     return state.add_job(job_payload)
 

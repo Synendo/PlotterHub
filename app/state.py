@@ -16,7 +16,7 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 # Jobs that were mid-run when the service died need normalization on load.
 # With a valid resume_path on disk the worker's existing res_plot flow can
 # continue them; otherwise we can't recover position so they become failed.
-_IN_FLIGHT_STATUSES = {"planning", "plotting", "homing", "awaiting_pen_change"}
+_IN_FLIGHT_STATUSES = {"optimizing", "planning", "plotting", "homing", "awaiting_pen_change"}
 
 _queue: list[dict] = []
 _active_id: str | None = None

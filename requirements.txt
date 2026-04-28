@@ -2,3 +2,4 @@ fastapi
 uvicorn[standard]
 python-multipart
 https://cdn.evilmadscientist.com/dl/ad/public/AxiDraw_API.zip
+vpype

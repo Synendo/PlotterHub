@@ -15,13 +15,16 @@ I also had a look at [saxi](https://github.com/nornagon/saxi), but it didn't sup
 ## Features
 
 **Plotting**
+
 - Drag-and-drop SVG upload; Inkscape layers parsed and selectable
 - Staged plotting: optional pause between layers for pen changes
 - Paper presets (A0–A5, B0–B5, Letter, Legal, Ledger, ANSI C–E, Custom) + orientation
 - 4-sided margins and fit-content-to-page
 - Configurable pen-down / pen-up speed and acceleration
+- Optional [vpype](https://vpype.readthedocs.io/) optimization (linemerge / linesimplify / linesort / reloop) before plotting; cached per job and reused across re-plots
 
 **During the plot**
+
 - Pre-plot estimate: time, pen-down distance, total distance, pen lifts
 - Progress bar with remaining-time based on the estimate
 - Live pen cursor on the preview (blue while drawing, grey while traveling)
@@ -29,12 +32,14 @@ I also had a look at [saxi](https://github.com/nornagon/saxi), but it didn't sup
 - Physical pause button toggles: press to pause, press again to resume
 
 **Operational**
+
 - Runs as a systemd service under the user who invoked `install.sh`
 - Plot worker runs in a thread; preview runs in a subprocess (cancel-killable)
 - In-memory preview cache — same SVG + same params skips the ~20–30s planning pass
 - Graceful shutdown on service stop: pauses any in-flight plot so the pen is raised and the resume SVG is flushed
 
 **API**
+
 - HTTP API for companion apps and scripts under `/api/v1/*`, secured with an auto-generated `X-API-Key`
 - See [API.md](API.md) for the endpoint reference and `multipart/form-data` schema
 
@@ -54,17 +59,21 @@ Tested on a Raspberry Pi 3 Model B running Raspberry Pi OS Lite (64-bit), a port
 ### Dependencies installed by the script
 
 **apt packages** (idempotent — apt skips anything already present):
+
 - [`python3`](https://www.python.org/)
 - [`python3-venv`](https://docs.python.org/3/library/venv.html)
 - [`python3-pip`](https://pip.pypa.io/)
 
 **Python packages**, pip-installed into a project-local `venv/`:
+
 - [`fastapi`](https://fastapi.tiangolo.com/)
 - [`uvicorn[standard]`](https://www.uvicorn.org/)
 - [`python-multipart`](https://github.com/Kludex/python-multipart)
 - [`pyaxidraw`](https://axidraw.com/doc/py_api/) (from the Evil Mad Scientist [AxiDraw API zip](https://cdn.evilmadscientist.com/dl/ad/public/AxiDraw_API.zip))
+- [`vpype`](https://vpype.readthedocs.io/) — invoked as a subprocess for optional pre-plot optimization
 
 **System files** (written / overwritten on every run):
+
 - `/etc/systemd/system/plotterhub.service` — templated from `systemd/plotterhub.service` with the invoking user and the repo path
 - `/etc/sudoers.d/plotterhub-shutdown` — grants the service user NOPASSWD on `/sbin/shutdown` so the UI's shutdown button works
 
@@ -135,6 +144,7 @@ Before upgrading, it's cleanest to wait until the queue is idle (or the active j
 |---|---|
 | Backend | Python 3.13, FastAPI, Uvicorn (uvloop + httptools) |
 | Plotter control | `pyaxidraw` Python API (not the `axicli` CLI) |
+| Optimization | `vpype` CLI invoked as a subprocess (cancel-killable) for optional pre-plot path optimization; per-job cache reused across re-plots |
 | Frontend | Vanilla HTML + CSS + JavaScript, no build step |
 | Transport | HTTP + WebSocket |
 | State | In-memory, broadcast via `asyncio.Queue` |
@@ -150,6 +160,7 @@ app/
   plot_worker.py    # plot + resume + homing worker thread,
                     # button-poll and position-poll threads, preview cache
   preview_runner.py # subprocess entry point for pyaxidraw preview mode
+  svg_optimize.py   # vpype subprocess wrapper for optional pre-plot optimization
   svg_utils.py      # Inkscape-layer parsing, filter, paper transform
   state.py          # in-memory state + WebSocket broadcast
   config.py         # plotter model config, persisted to config.json
