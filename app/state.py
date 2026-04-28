@@ -18,6 +18,40 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 # continue them; otherwise we can't recover position so they become failed.
 _IN_FLIGHT_STATUSES = {"optimizing", "planning", "plotting", "homing", "awaiting_pen_change"}
 
+# Permitted job-status transitions, validated centrally in update_job /
+# update_job_silent. Same-status updates (no actual transition) are exempt,
+# as is the startup rehydrate code in _load_from_disk — that path normalises
+# orphaned in-flight statuses by direct mutation, not as a real transition.
+_VALID_TRANSITIONS: dict[str, set[str]] = {
+    "queued":              {"optimizing", "planning"},
+    "optimizing":          {"planning", "cancelled", "failed"},
+    "planning":            {"plotting", "cancelled"},
+    "plotting":            {"paused", "homing", "awaiting_pen_change",
+                            "completed", "failed"},
+    "paused":              {"plotting", "homing", "cancelled"},
+    "awaiting_pen_change": {"plotting", "cancelled"},
+    "homing":              {"cancelled"},
+    "completed":           {"queued"},
+    "failed":              {"queued"},
+    "cancelled":           {"queued"},
+}
+
+
+class InvalidTransition(RuntimeError):
+    """Raised when update_job is asked to perform a status change that
+    violates _VALID_TRANSITIONS. Surfaces real bugs early rather than
+    silently corrupting the state machine."""
+
+
+def _check_status_transition(job_id: str, current: str | None, new: str) -> None:
+    if new == current:
+        return
+    allowed = _VALID_TRANSITIONS.get(current or "", set())
+    if new in allowed:
+        return
+    log.error("state: invalid transition %s → %s for job %s", current, new, job_id)
+    raise InvalidTransition(f"job {job_id}: {current!r} → {new!r}")
+
 _queue: list[dict] = []
 _active_id: str | None = None
 _awaiting_next_job: bool = False
@@ -174,6 +208,8 @@ def update_job(job_id: str, **updates) -> dict | None:
     j = _get(job_id)
     if j is None:
         return None
+    if "status" in updates:
+        _check_status_transition(job_id, j.get("status"), updates["status"])
     j.update(updates)
     _persist()
     _broadcast()
@@ -184,6 +220,8 @@ def update_job_silent(job_id: str, **updates) -> None:
     """Same as update_job but no broadcast — for tight-loop fields we don't need to stream."""
     j = _get(job_id)
     if j is not None:
+        if "status" in updates:
+            _check_status_transition(job_id, j.get("status"), updates["status"])
         j.update(updates)
         _persist()
 
