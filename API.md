@@ -90,7 +90,7 @@ All fields are optional. Unspecified booleans, speeds, and `selected` flags fall
     {
       "index": 0,                     // Required — the 0-based Inkscape layer index.
       "name": "string",               // Optional — overrides the embedded `inkscape:label`.
-      "type": "pattern" | "text" | "svg",  // Optional — drives a small icon in the UI.
+      "type": "pattern" | "text" | "svg" | "calibration",  // Optional — drives a small icon in the UI.
       "selected": false               // Optional, default true. `false` excludes the layer from the plot.
     }
   ]
@@ -117,6 +117,7 @@ Layer types are decorative — the icon is shown in the layer list:
 | `pattern` | Generative / decorative pattern | waveform |
 | `text` | Text rendered as paths | text bars |
 | `svg` | A vector glyph or composed shape | triangle/circle/square |
+| `calibration` | Registration / alignment marks | scope (crosshair-in-circle) |
 
 #### Response
 

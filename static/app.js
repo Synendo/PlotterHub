@@ -1201,11 +1201,13 @@ function escapeHtml(s) {
 }
 
 // Inline SVG glyphs that approximate the SF Symbols the macOS companion app
-// uses (waveform.path / character.text.justify / xmark.triangle.circle.square).
+// uses (waveform.path / character.text.justify / xmark.triangle.circle.square /
+// scope).
 const LAYER_TYPE_ICONS = {
   pattern: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 8 Q 3 3 5 8 T 9 8 T 13 8 T 15 8" /></svg>`,
   text: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="11" y2="12"/></svg>`,
   svg: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3.2"/><rect x="7.5" y="7.5" width="6.5" height="6.5"/><polygon points="3,14 9,14 6,9"/></svg>`,
+  calibration: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="4.5"/><line x1="8" y1="1.5" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="14.5" y2="8"/></svg>`,
 };
 function layerTypeIcon(type) {
   if (!type || !LAYER_TYPE_ICONS[type]) return "";

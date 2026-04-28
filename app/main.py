@@ -257,7 +257,7 @@ class ApiPaperSize(BaseModel):
 class ApiLayer(BaseModel):
     index: int = Field(ge=0)
     name: str | None = None
-    type: Literal["pattern", "text", "svg"] | None = None
+    type: Literal["pattern", "text", "svg", "calibration"] | None = None
     selected: bool | None = None  # None == not specified == default True
 
 
