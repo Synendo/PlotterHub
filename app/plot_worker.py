@@ -351,7 +351,10 @@ def cancel_active() -> None:
     elif st == "paused":
         _stop_button_poll()
         _cancel_flag.set()
-        _continue_event.set()  # not strictly needed but harmless
+        # The pause-wait loop polls the job's status (not _cancel_flag), so
+        # flipping to 'homing' is what actually unblocks it. The loop then
+        # runs res_home with the saved resume_path and marks the job cancelled.
+        state.update_job(job["id"], status="homing")
     else:
         raise RuntimeError(f"Cannot cancel job in status '{st}'")
 
@@ -475,8 +478,11 @@ def _run_job(job_id: str) -> None:
     if job is None:
         return
 
-    # Build stages from the job's selections + pause_between_layers
-    selections = job["layer_selections"]
+    # Build stages from the job's selections + pause_between_layers. Entries
+    # with `selected: false` represent layers the user has toggled off in the
+    # UI but whose metadata (name/type) we still want to preserve — skip them
+    # when planning the plot.
+    selections = [s for s in job["layer_selections"] if s.get("selected", True)]
     pause_between = job.get("pause_between_layers", True)
     if pause_between and len(selections) > 1:
         stages = [{"layer_indices": [s["index"]], "labels": [s["label"]], "status": "pending"}

@@ -171,7 +171,7 @@ def create_job(req: JobCreate):
     path = UPLOAD_DIR / f"{req.svg_id}.svg"
     if not path.exists():
         raise HTTPException(404, "svg not found")
-    if not req.layer_selections:
+    if not any(s.get("selected", True) for s in (req.layer_selections or [])):
         raise HTTPException(400, "select at least one layer")
     job = state.add_job(req.model_dump())
     return job
@@ -339,26 +339,27 @@ async def api_create_job(file: UploadFile = File(...),
         meta.paper_size, info.get("width_mm"), info.get("height_mm"),
     )
 
-    # Build layer_selections: by default include all SVG layers, applying per-layer
+    # Build layer_selections: include every SVG layer, applying per-layer
     # name/type/selected overrides from metadata (keyed by SVG layer index).
-    # `selected: false` filters the layer out of the job entirely; missing/null
-    # `selected` defaults to true so existing clients keep their behavior.
+    # Deselected layers are kept in the list with `selected: false` so their
+    # name/type metadata survives a UI toggle off-and-on. The worker filters
+    # by `selected` when planning the plot.
     overrides = {l.index: l for l in meta.layers}
     layer_selections: list[dict] = []
     for layer in info["layers"]:
         idx = layer["index"]
         ovr = overrides.get(idx)
-        if ovr and ovr.selected is False:
-            continue
         sel: dict = {"index": idx, "label": (ovr.name if ovr and ovr.name else layer["label"])}
         if ovr and ovr.type:
             sel["type"] = ovr.type
+        if ovr and ovr.selected is False:
+            sel["selected"] = False
         layer_selections.append(sel)
 
     if not info["layers"]:
         path.unlink(missing_ok=True)
         raise HTTPException(400, "SVG contains no Inkscape layers")
-    if not layer_selections:
+    if not any(s.get("selected", True) for s in layer_selections):
         path.unlink(missing_ok=True)
         raise HTTPException(400, "all layers were deselected")
 

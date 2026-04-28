@@ -599,8 +599,9 @@ function updateCard(card, job) {
   const paperLabel = formatPaperLabel(job);
   const stageCount = job.stages?.length || 0;
   const subParts = [paperLabel];
-  if (job.layer_selections?.length) {
-    subParts.push(`${job.layer_selections.length} layer${job.layer_selections.length > 1 ? "s" : ""}`);
+  const layerCount = (job.layer_selections || []).filter((s) => s.selected !== false).length;
+  if (layerCount) {
+    subParts.push(`${layerCount} layer${layerCount > 1 ? "s" : ""}`);
   }
   if (job.estimated_total_seconds) subParts.push(`~${formatDuration(Math.round(job.estimated_total_seconds))}`);
   card.querySelector(".job-sub").textContent = subParts.join(" · ");
@@ -895,7 +896,11 @@ function syncPreviewLayers(card, job) {
   const groups = Array.from(svgEl.children).filter(
     (el) => el.tagName.toLowerCase() === "g" && el.getAttribute("inkscape:groupmode") === "layer"
   );
-  const selected = new Set(job.layer_selections.map((s) => s.index));
+  // `selected !== false` keeps backward-compat with old job records that
+  // never carried an explicit selected flag.
+  const selected = new Set(
+    job.layer_selections.filter((s) => s.selected !== false).map((s) => s.index)
+  );
   groups.forEach((g, i) => { g.style.display = selected.has(i) ? "" : "none"; });
 }
 
@@ -903,7 +908,12 @@ function renderLayers(card, job) {
   const ctx = cardCtx.get(job.id);
   if (!ctx || !ctx.svg) return;
   const ul = card.querySelector(".layers");
-  const selected = new Set(job.layer_selections.map((s) => s.index));
+  // Layer entries carry their own metadata (label, type) plus an optional
+  // `selected` flag; entries with selected===false stay in the list so the
+  // metadata is preserved across toggles.
+  const selected = new Set(
+    job.layer_selections.filter((s) => s.selected !== false).map((s) => s.index)
+  );
   const overrides = new Map(job.layer_selections.map((s) => [s.index, s]));
   ul.innerHTML = "";
   for (const layer of ctx.svg.layers) {
@@ -925,23 +935,32 @@ function renderLayers(card, job) {
     ul.addEventListener("change", () => {
       const cur = serverState.queue.find((j) => j.id === card.dataset.id);
       const curOverrides = new Map((cur?.layer_selections || []).map((s) => [s.index, s]));
-      const layers = Array.from(ul.querySelectorAll("input[type=checkbox]:checked")).map((el) =>
-        ctx.svg.layers.find((l) => l.index === parseInt(el.dataset.index))
-      ).filter(Boolean).map((l) => {
+      const checkedIndices = new Set(
+        Array.from(ul.querySelectorAll("input[type=checkbox]:checked"))
+          .map((el) => parseInt(el.dataset.index))
+      );
+      // Walk every SVG layer (not just the checked ones) so deselected
+      // layers stay in the list with `selected: false`. Their label/type
+      // overrides survive a toggle off-and-on.
+      const layers = ctx.svg.layers.map((l) => {
         const ovr = curOverrides.get(l.index);
-        const sel = { index: l.index, label: (ovr && ovr.label) || l.label };
+        const sel = {
+          index: l.index,
+          label: (ovr && ovr.label) || l.label,
+          selected: checkedIndices.has(l.index),
+        };
         if (ovr && ovr.type) sel.type = ovr.type;
         return sel;
       });
-      // Show/hide pause-between-layers only when >1 selected
-      card.querySelector(".multi-layer-options").hidden = layers.length < 2;
-      // Update the SVG preview visibility
+      const selectedCount = layers.filter((l) => l.selected).length;
+      card.querySelector(".multi-layer-options").hidden = selectedCount < 2;
       syncPreviewLayers(card, { ...job, layer_selections: layers });
       queueCardUpdate(card, { layer_selections: layers });
     });
     ul.dataset.wired = "1";
   }
-  card.querySelector(".multi-layer-options").hidden = job.layer_selections.length < 2;
+  const selectedCount = job.layer_selections.filter((s) => s.selected !== false).length;
+  card.querySelector(".multi-layer-options").hidden = selectedCount < 2;
 }
 
 function renderStages(card, job) {

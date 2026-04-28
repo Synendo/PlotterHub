@@ -244,7 +244,7 @@ Editable fields:
 | `optimize` | bool | Run the vpype optimization pipeline before planning. |
 | `optimize_tolerance_mm` | number | 0.01–10.0 |
 | `optimize_linemerge`, `optimize_linesimplify`, `optimize_linesort`, `optimize_reloop` | bool | Per-step toggles for the vpype pipeline. |
-| `layer_selections` | array | `[{index, label, type?}]` — drives which layers plot. |
+| `layer_selections` | array | `[{index, label, type?, selected?}]` — drives which layers plot. Entries with `selected: false` are kept in the list (so name/type metadata survives a toggle in the UI) but skipped when planning. |
 
 Returns the full updated job record. **`409 Conflict`** if the job is currently active (`plotting`, `planning`, `paused`, `awaiting_pen_change`, `homing`).
 
