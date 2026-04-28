@@ -9,7 +9,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends, FastAPI, File, Form, Header, HTTPException,
+    UploadFile, WebSocket, WebSocketDisconnect,
+)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
@@ -380,8 +383,8 @@ async def api_create_job(file: UploadFile = File(...),
         "paper_size_name": paper_name,
         "layer_selections": layer_selections,
         "pause_between_layers": pick(meta.pause_between_layers, config.PAUSE_BETWEEN_LAYERS_DEFAULT),
-        "pause_after_job":      pick(meta.pause_after_job,      config.PAUSE_AFTER_JOB_DEFAULT),
-        "delete_on_complete":   pick(meta.delete_on_complete,   config.DELETE_ON_COMPLETE_DEFAULT),
+        "pause_after_job": pick(meta.pause_after_job, config.PAUSE_AFTER_JOB_DEFAULT),
+        "delete_on_complete": pick(meta.delete_on_complete, config.DELETE_ON_COMPLETE_DEFAULT),
         "paper_w_mm": paper_w_mm,
         "paper_h_mm": paper_h_mm,
         "margin_top_mm": 0.0,
@@ -394,14 +397,14 @@ async def api_create_job(file: UploadFile = File(...),
         "transform_offset_x_mm": 0.0,
         "transform_offset_y_mm": 0.0,
         "speed_pendown": pick(meta.speed_pendown, config.SPEED_PENDOWN_DEFAULT),
-        "speed_penup":   pick(meta.speed_penup,   config.SPEED_PENUP_DEFAULT),
-        "accel":         pick(meta.accel,         config.ACCEL_DEFAULT),
-        "optimize":             pick(meta.optimize,             config.OPTIMIZE_DEFAULT),
-        "optimize_tolerance_mm":pick(meta.optimize_tolerance_mm,config.OPTIMIZE_TOLERANCE_DEFAULT_MM),
-        "optimize_linemerge":   pick(meta.optimize_linemerge,   config.OPTIMIZE_LINEMERGE_DEFAULT),
-        "optimize_linesimplify":pick(meta.optimize_linesimplify,config.OPTIMIZE_LINESIMPLIFY_DEFAULT),
-        "optimize_linesort":    pick(meta.optimize_linesort,    config.OPTIMIZE_LINESORT_DEFAULT),
-        "optimize_reloop":      pick(meta.optimize_reloop,      config.OPTIMIZE_RELOOP_DEFAULT),
+        "speed_penup": pick(meta.speed_penup, config.SPEED_PENUP_DEFAULT),
+        "accel": pick(meta.accel, config.ACCEL_DEFAULT),
+        "optimize": pick(meta.optimize, config.OPTIMIZE_DEFAULT),
+        "optimize_tolerance_mm": pick(meta.optimize_tolerance_mm, config.OPTIMIZE_TOLERANCE_DEFAULT_MM),
+        "optimize_linemerge": pick(meta.optimize_linemerge, config.OPTIMIZE_LINEMERGE_DEFAULT),
+        "optimize_linesimplify": pick(meta.optimize_linesimplify, config.OPTIMIZE_LINESIMPLIFY_DEFAULT),
+        "optimize_linesort": pick(meta.optimize_linesort, config.OPTIMIZE_LINESORT_DEFAULT),
+        "optimize_reloop": pick(meta.optimize_reloop, config.OPTIMIZE_RELOOP_DEFAULT),
     }
     return state.add_job(job_payload)
 

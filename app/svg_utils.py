@@ -100,7 +100,7 @@ def transform_to_paper(
     vb = root.get("viewBox", "")
     if vb:
         parts = vb.split()
-        vb_x, vb_y, vb_w, vb_h = (float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3]))
+        vb_x, vb_y, vb_w, vb_h = (float(p) for p in parts[:4])
     else:
         vb_x, vb_y = 0.0, 0.0
         vb_w, vb_h = orig_w_mm, orig_h_mm
