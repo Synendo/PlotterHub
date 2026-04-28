@@ -3,12 +3,19 @@
 Loads from a JSON file on disk (writable by the service user) and falls back
 to the PLOTTER_MODEL environment variable and hardcoded defaults. Edits from
 the UI persist to the JSON file.
+
+Settings are described once in the ``_SETTINGS`` table; load / snapshot /
+update derive everything from it. Adding a new setting is a one-line change.
+External callers keep accessing values as module-level uppercase attributes
+(e.g. ``config.PLOTTER_MODEL``) — the table writes them via ``globals()``.
 """
 import json
 import logging
 import os
 import secrets
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
@@ -26,72 +33,73 @@ def _read_version() -> str:
 
 APP_VERSION: str = _read_version()
 
-PLOTTER_MODEL: int = int(os.environ.get("PLOTTER_MODEL", "2"))
 
-# Static API key for /api/v1/* routes. Auto-generated on first run if missing
-# from config.json; persisted thereafter so the macOS companion app sees a
-# stable value across service restarts.
+@dataclass(frozen=True)
+class _Setting:
+    name: str                                # snake_case key in config.json
+    type: type                               # int, bool, float, or str
+    default: Any
+    validate: Callable[[Any], bool] | None = None  # returns True if value is acceptable
+
+
+_SETTINGS: list[_Setting] = [
+    _Setting("plotter_model", int, int(os.environ.get("PLOTTER_MODEL", "2")),
+             lambda v: 1 <= v <= 8),
+    _Setting("pause_between_layers_default", bool, True),
+    _Setting("pause_after_job_default", bool, True),
+    _Setting("delete_on_complete_default", bool, False),
+    _Setting("speed_pendown_default", int, 25, lambda v: 1 <= v <= 110),
+    _Setting("speed_penup_default", int, 75, lambda v: 1 <= v <= 110),
+    _Setting("accel_default", int, 75, lambda v: 1 <= v <= 100),
+    _Setting("optimize_default", bool, False),
+    _Setting("optimize_tolerance_default_mm", float, 0.10,
+             lambda v: 0.01 <= v <= 10.0),
+    _Setting("optimize_linemerge_default", bool, True),
+    _Setting("optimize_linesimplify_default", bool, True),
+    _Setting("optimize_linesort_default", bool, True),
+    _Setting("optimize_reloop_default", bool, True),
+    _Setting("display_unit", str, None,
+             lambda v: v in ("mm", "cm", "in")),
+]
+
+# Static API key for /api/v1/* routes — kept outside the schema because it
+# auto-generates when missing rather than falling back to a hardcoded default.
 API_KEY: str = ""
 
-# Defaults used for new jobs. The UI can override per-job; these are the
-# starting values a freshly-dropped SVG picks up.
-PAUSE_BETWEEN_LAYERS_DEFAULT: bool = True
-PAUSE_AFTER_JOB_DEFAULT: bool = True
-DELETE_ON_COMPLETE_DEFAULT: bool = False
-SPEED_PENDOWN_DEFAULT: int = 25
-SPEED_PENUP_DEFAULT: int = 75
-ACCEL_DEFAULT: int = 75
 
-# vpype-based SVG optimization. Disabled by default; tolerance is the value
-# fed to linemerge + linesimplify. Step toggles let the user pick which vpype
-# commands run as part of the pipeline.
-OPTIMIZE_DEFAULT: bool = False
-OPTIMIZE_TOLERANCE_DEFAULT_MM: float = 0.10
-OPTIMIZE_LINEMERGE_DEFAULT: bool = True
-OPTIMIZE_LINESIMPLIFY_DEFAULT: bool = True
-OPTIMIZE_LINESORT_DEFAULT: bool = True
-OPTIMIZE_RELOOP_DEFAULT: bool = True
-
-# Display preference for length labels (paper size, SVG dims). Internal
-# storage and inputs stay in mm regardless. None means "not yet set" — the
-# client falls back to navigator.language (en-US → in, otherwise mm) until
-# the user picks something in Settings.
-DISPLAY_UNIT: str | None = None
-
-
-def _coerce_int(data: dict, key: str) -> int | None:
-    if key not in data:
+def _coerce(s: _Setting, raw: Any) -> Any | None:
+    """Cast raw to the setting's declared type and run its validator. Returns
+    None if the value is missing or invalid (caller decides what to do)."""
+    if raw is None:
         return None
     try:
-        return int(data[key])
+        if s.type is bool:
+            v: Any = bool(raw)
+        elif s.type is int:
+            v = int(raw)
+        elif s.type is float:
+            v = float(raw)
+        else:
+            v = raw  # str
     except (TypeError, ValueError):
-        log.warning("config: invalid %s in %s", key, CONFIG_PATH)
+        log.warning("config: invalid %s in %s", s.name, CONFIG_PATH)
         return None
+    if s.validate is not None and not s.validate(v):
+        return None
+    return v
 
 
-def _coerce_bool(data: dict, key: str) -> bool | None:
-    if key not in data:
-        return None
-    return bool(data[key])
+def _set(s: _Setting, value: Any) -> None:
+    globals()[s.name.upper()] = value
 
 
-def _coerce_float(data: dict, key: str) -> float | None:
-    if key not in data:
-        return None
-    try:
-        return float(data[key])
-    except (TypeError, ValueError):
-        log.warning("config: invalid %s in %s", key, CONFIG_PATH)
-        return None
+# Initialize module-level attributes from defaults so static imports see
+# valid values before _load_from_disk runs.
+for _s in _SETTINGS:
+    _set(_s, _s.default)
 
 
 def _load_from_disk() -> None:
-    global PLOTTER_MODEL, SPEED_PENDOWN_DEFAULT, SPEED_PENUP_DEFAULT, ACCEL_DEFAULT
-    global PAUSE_BETWEEN_LAYERS_DEFAULT, PAUSE_AFTER_JOB_DEFAULT, DELETE_ON_COMPLETE_DEFAULT
-    global OPTIMIZE_DEFAULT, OPTIMIZE_TOLERANCE_DEFAULT_MM
-    global OPTIMIZE_LINEMERGE_DEFAULT, OPTIMIZE_LINESIMPLIFY_DEFAULT
-    global OPTIMIZE_LINESORT_DEFAULT, OPTIMIZE_RELOOP_DEFAULT
-    global DISPLAY_UNIT
     global API_KEY
     data: dict = {}
     if CONFIG_PATH.exists():
@@ -100,37 +108,21 @@ def _load_from_disk() -> None:
         except Exception:
             log.exception("config: could not parse %s; using defaults", CONFIG_PATH)
             data = {}
-    v = _coerce_int(data, "plotter_model")
-    if v is not None: PLOTTER_MODEL = v
-    v = _coerce_int(data, "speed_pendown_default")
-    if v is not None: SPEED_PENDOWN_DEFAULT = v
-    v = _coerce_int(data, "speed_penup_default")
-    if v is not None: SPEED_PENUP_DEFAULT = v
-    v = _coerce_int(data, "accel_default")
-    if v is not None: ACCEL_DEFAULT = v
-    v = _coerce_bool(data, "pause_between_layers_default")
-    if v is not None: PAUSE_BETWEEN_LAYERS_DEFAULT = v
-    v = _coerce_bool(data, "pause_after_job_default")
-    if v is not None: PAUSE_AFTER_JOB_DEFAULT = v
-    v = _coerce_bool(data, "delete_on_complete_default")
-    if v is not None: DELETE_ON_COMPLETE_DEFAULT = v
-    v = _coerce_bool(data, "optimize_default")
-    if v is not None: OPTIMIZE_DEFAULT = v
-    v = _coerce_float(data, "optimize_tolerance_default_mm")
-    if v is not None: OPTIMIZE_TOLERANCE_DEFAULT_MM = v
-    v = _coerce_bool(data, "optimize_linemerge_default")
-    if v is not None: OPTIMIZE_LINEMERGE_DEFAULT = v
-    v = _coerce_bool(data, "optimize_linesimplify_default")
-    if v is not None: OPTIMIZE_LINESIMPLIFY_DEFAULT = v
-    v = _coerce_bool(data, "optimize_linesort_default")
-    if v is not None: OPTIMIZE_LINESORT_DEFAULT = v
-    v = _coerce_bool(data, "optimize_reloop_default")
-    if v is not None: OPTIMIZE_RELOOP_DEFAULT = v
-    du = data.get("display_unit")
-    # Legacy "auto" values from earlier versions are intentionally not
-    # accepted — they collapse back to None so the client falls back to
-    # locale, matching the new "no auto stored value" semantics.
-    if du in ("mm", "cm", "in"): DISPLAY_UNIT = du
+
+    for s in _SETTINGS:
+        if s.name not in data:
+            continue
+        raw = data[s.name]
+        if raw is None:
+            # Honour explicit null only for settings whose default is None
+            # (currently just display_unit).
+            if s.default is None:
+                _set(s, None)
+            continue
+        v = _coerce(s, raw)
+        if v is not None:
+            _set(s, v)
+
     api = data.get("api_key")
     if isinstance(api, str) and api.strip():
         API_KEY = api.strip()
@@ -147,62 +139,19 @@ def _save_to_disk() -> None:
 
 
 def snapshot() -> dict:
-    return {
-        "plotter_model": PLOTTER_MODEL,
-        "api_key": API_KEY,
-        "pause_between_layers_default": PAUSE_BETWEEN_LAYERS_DEFAULT,
-        "pause_after_job_default": PAUSE_AFTER_JOB_DEFAULT,
-        "delete_on_complete_default": DELETE_ON_COMPLETE_DEFAULT,
-        "speed_pendown_default": SPEED_PENDOWN_DEFAULT,
-        "speed_penup_default": SPEED_PENUP_DEFAULT,
-        "accel_default": ACCEL_DEFAULT,
-        "optimize_default": OPTIMIZE_DEFAULT,
-        "optimize_tolerance_default_mm": OPTIMIZE_TOLERANCE_DEFAULT_MM,
-        "optimize_linemerge_default": OPTIMIZE_LINEMERGE_DEFAULT,
-        "optimize_linesimplify_default": OPTIMIZE_LINESIMPLIFY_DEFAULT,
-        "optimize_linesort_default": OPTIMIZE_LINESORT_DEFAULT,
-        "optimize_reloop_default": OPTIMIZE_RELOOP_DEFAULT,
-        "display_unit": DISPLAY_UNIT,
-    }
+    out: dict = {"api_key": API_KEY}
+    for s in _SETTINGS:
+        out[s.name] = globals()[s.name.upper()]
+    return out
 
 
 def update(**kwargs) -> None:
-    global PLOTTER_MODEL, SPEED_PENDOWN_DEFAULT, SPEED_PENUP_DEFAULT, ACCEL_DEFAULT
-    global PAUSE_BETWEEN_LAYERS_DEFAULT, PAUSE_AFTER_JOB_DEFAULT, DELETE_ON_COMPLETE_DEFAULT
-    global OPTIMIZE_DEFAULT, OPTIMIZE_TOLERANCE_DEFAULT_MM
-    global OPTIMIZE_LINEMERGE_DEFAULT, OPTIMIZE_LINESIMPLIFY_DEFAULT
-    global OPTIMIZE_LINESORT_DEFAULT, OPTIMIZE_RELOOP_DEFAULT
-    global DISPLAY_UNIT
-    if "plotter_model" in kwargs:
-        PLOTTER_MODEL = int(kwargs["plotter_model"])
-    if "pause_between_layers_default" in kwargs:
-        PAUSE_BETWEEN_LAYERS_DEFAULT = bool(kwargs["pause_between_layers_default"])
-    if "pause_after_job_default" in kwargs:
-        PAUSE_AFTER_JOB_DEFAULT = bool(kwargs["pause_after_job_default"])
-    if "delete_on_complete_default" in kwargs:
-        DELETE_ON_COMPLETE_DEFAULT = bool(kwargs["delete_on_complete_default"])
-    if "speed_pendown_default" in kwargs:
-        SPEED_PENDOWN_DEFAULT = int(kwargs["speed_pendown_default"])
-    if "speed_penup_default" in kwargs:
-        SPEED_PENUP_DEFAULT = int(kwargs["speed_penup_default"])
-    if "accel_default" in kwargs:
-        ACCEL_DEFAULT = int(kwargs["accel_default"])
-    if "optimize_default" in kwargs:
-        OPTIMIZE_DEFAULT = bool(kwargs["optimize_default"])
-    if "optimize_tolerance_default_mm" in kwargs:
-        OPTIMIZE_TOLERANCE_DEFAULT_MM = float(kwargs["optimize_tolerance_default_mm"])
-    if "optimize_linemerge_default" in kwargs:
-        OPTIMIZE_LINEMERGE_DEFAULT = bool(kwargs["optimize_linemerge_default"])
-    if "optimize_linesimplify_default" in kwargs:
-        OPTIMIZE_LINESIMPLIFY_DEFAULT = bool(kwargs["optimize_linesimplify_default"])
-    if "optimize_linesort_default" in kwargs:
-        OPTIMIZE_LINESORT_DEFAULT = bool(kwargs["optimize_linesort_default"])
-    if "optimize_reloop_default" in kwargs:
-        OPTIMIZE_RELOOP_DEFAULT = bool(kwargs["optimize_reloop_default"])
-    if "display_unit" in kwargs:
-        val = kwargs["display_unit"]
-        if val in ("mm", "cm", "in"):
-            DISPLAY_UNIT = val
+    for s in _SETTINGS:
+        if s.name not in kwargs:
+            continue
+        v = _coerce(s, kwargs[s.name])
+        if v is not None:
+            _set(s, v)
     _save_to_disk()
 
 
