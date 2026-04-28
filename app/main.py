@@ -85,8 +85,32 @@ def get_svg(svg_id: str):
 
 
 # Jobs -------------------------------------------------------------------
+#
+# The optimize_* fields appear in three shapes:
+#   - JobCreate (web POST):           required-with-defaults
+#   - JobUpdate (web PATCH):          all-Optional, no defaults
+#   - ApiJobMetadata (public POST):   all-Optional, server fills missing values
+# Two mixins capture the variants so we don't repeat the field list three times.
 
-class JobCreate(BaseModel):
+class _OptimizeCreateFields(BaseModel):
+    optimize: bool = False
+    optimize_tolerance_mm: float = Field(0.10, ge=0.01, le=10.0)
+    optimize_linemerge: bool = True
+    optimize_linesimplify: bool = True
+    optimize_linesort: bool = True
+    optimize_reloop: bool = True
+
+
+class _OptimizeOptionalFields(BaseModel):
+    optimize: bool | None = None
+    optimize_tolerance_mm: float | None = Field(None, ge=0.01, le=10.0)
+    optimize_linemerge: bool | None = None
+    optimize_linesimplify: bool | None = None
+    optimize_linesort: bool | None = None
+    optimize_reloop: bool | None = None
+
+
+class JobCreate(_OptimizeCreateFields):
     svg_id: str
     filename: str = "upload.svg"
     name: str | None = None
@@ -109,12 +133,6 @@ class JobCreate(BaseModel):
     speed_pendown: int = 25
     speed_penup: int = 75
     accel: int = 75
-    optimize: bool = False
-    optimize_tolerance_mm: float = Field(0.10, ge=0.01, le=10.0)
-    optimize_linemerge: bool = True
-    optimize_linesimplify: bool = True
-    optimize_linesort: bool = True
-    optimize_reloop: bool = True
 
 
 class MoveRequest(BaseModel):
@@ -138,7 +156,7 @@ class SettingsUpdate(BaseModel):
     display_unit: Literal["mm", "cm", "in"] | None = None
 
 
-class JobUpdate(BaseModel):
+class JobUpdate(_OptimizeOptionalFields):
     layer_selections: list[dict] | None = None
     name: str | None = None
     paper_size_name: str | None = None
@@ -159,12 +177,6 @@ class JobUpdate(BaseModel):
     speed_pendown: int | None = None
     speed_penup: int | None = None
     accel: int | None = None
-    optimize: bool | None = None
-    optimize_tolerance_mm: float | None = Field(None, ge=0.01, le=10.0)
-    optimize_linemerge: bool | None = None
-    optimize_linesimplify: bool | None = None
-    optimize_linesort: bool | None = None
-    optimize_reloop: bool | None = None
 
 
 @app.post("/jobs")
@@ -262,7 +274,7 @@ class ApiLayer(BaseModel):
     selected: bool | None = None  # None == not specified == default True
 
 
-class ApiJobMetadata(BaseModel):
+class ApiJobMetadata(_OptimizeOptionalFields):
     name: str | None = None
     paper_size: ApiPaperSize | None = None
     layers: list[ApiLayer] = Field(default_factory=list)
@@ -272,12 +284,6 @@ class ApiJobMetadata(BaseModel):
     speed_pendown: int | None = Field(default=None, ge=1, le=110)
     speed_penup: int | None = Field(default=None, ge=1, le=110)
     accel: int | None = Field(default=None, ge=1, le=100)
-    optimize: bool | None = None
-    optimize_tolerance_mm: float | None = Field(default=None, ge=0.01, le=10.0)
-    optimize_linemerge: bool | None = None
-    optimize_linesimplify: bool | None = None
-    optimize_linesort: bool | None = None
-    optimize_reloop: bool | None = None
 
 
 def _resolve_paper(paper: ApiPaperSize | None,
