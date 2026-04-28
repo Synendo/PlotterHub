@@ -52,6 +52,12 @@ OPTIMIZE_LINESIMPLIFY_DEFAULT: bool = True
 OPTIMIZE_LINESORT_DEFAULT: bool = True
 OPTIMIZE_RELOOP_DEFAULT: bool = True
 
+# Display preference for length labels (paper size, SVG dims). Internal
+# storage and inputs stay in mm regardless. None means "not yet set" — the
+# client falls back to navigator.language (en-US → in, otherwise mm) until
+# the user picks something in Settings.
+DISPLAY_UNIT: str | None = None
+
 
 def _coerce_int(data: dict, key: str) -> int | None:
     if key not in data:
@@ -85,6 +91,7 @@ def _load_from_disk() -> None:
     global OPTIMIZE_DEFAULT, OPTIMIZE_TOLERANCE_DEFAULT_MM
     global OPTIMIZE_LINEMERGE_DEFAULT, OPTIMIZE_LINESIMPLIFY_DEFAULT
     global OPTIMIZE_LINESORT_DEFAULT, OPTIMIZE_RELOOP_DEFAULT
+    global DISPLAY_UNIT
     global API_KEY
     data: dict = {}
     if CONFIG_PATH.exists():
@@ -119,6 +126,11 @@ def _load_from_disk() -> None:
     if v is not None: OPTIMIZE_LINESORT_DEFAULT = v
     v = _coerce_bool(data, "optimize_reloop_default")
     if v is not None: OPTIMIZE_RELOOP_DEFAULT = v
+    du = data.get("display_unit")
+    # Legacy "auto" values from earlier versions are intentionally not
+    # accepted — they collapse back to None so the client falls back to
+    # locale, matching the new "no auto stored value" semantics.
+    if du in ("mm", "cm", "in"): DISPLAY_UNIT = du
     api = data.get("api_key")
     if isinstance(api, str) and api.strip():
         API_KEY = api.strip()
@@ -150,6 +162,7 @@ def snapshot() -> dict:
         "optimize_linesimplify_default": OPTIMIZE_LINESIMPLIFY_DEFAULT,
         "optimize_linesort_default": OPTIMIZE_LINESORT_DEFAULT,
         "optimize_reloop_default": OPTIMIZE_RELOOP_DEFAULT,
+        "display_unit": DISPLAY_UNIT,
     }
 
 
@@ -159,6 +172,7 @@ def update(**kwargs) -> None:
     global OPTIMIZE_DEFAULT, OPTIMIZE_TOLERANCE_DEFAULT_MM
     global OPTIMIZE_LINEMERGE_DEFAULT, OPTIMIZE_LINESIMPLIFY_DEFAULT
     global OPTIMIZE_LINESORT_DEFAULT, OPTIMIZE_RELOOP_DEFAULT
+    global DISPLAY_UNIT
     if "plotter_model" in kwargs:
         PLOTTER_MODEL = int(kwargs["plotter_model"])
     if "pause_between_layers_default" in kwargs:
@@ -185,6 +199,10 @@ def update(**kwargs) -> None:
         OPTIMIZE_LINESORT_DEFAULT = bool(kwargs["optimize_linesort_default"])
     if "optimize_reloop_default" in kwargs:
         OPTIMIZE_RELOOP_DEFAULT = bool(kwargs["optimize_reloop_default"])
+    if "display_unit" in kwargs:
+        val = kwargs["display_unit"]
+        if val in ("mm", "cm", "in"):
+            DISPLAY_UNIT = val
     _save_to_disk()
 
 

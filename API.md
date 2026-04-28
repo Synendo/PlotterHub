@@ -325,9 +325,12 @@ Returns the current snapshot:
   "optimize_linemerge_default": true,
   "optimize_linesimplify_default": true,
   "optimize_linesort_default": true,
-  "optimize_reloop_default": true
+  "optimize_reloop_default": true,
+  "display_unit": null                      // null | "mm" | "cm" | "in" — UI labels only
 }
 ```
+
+`display_unit` only affects how the web UI renders paper-size and SVG-dimension labels. Internal storage and inputs always stay in mm. When the field is `null` (no preference saved yet), the browser picks an initial value from `navigator.language` (en-US → in, otherwise mm); once the user saves a choice it overrides the locale fallback on every subsequent load.
 
 #### `PATCH /api/v1/settings`
 
@@ -345,6 +348,7 @@ Body is sparse JSON — only the fields you send are applied. Returns the new sn
 | `optimize_default` | bool |
 | `optimize_tolerance_default_mm` | float 0.01–10.0 |
 | `optimize_linemerge_default`, `optimize_linesimplify_default`, `optimize_linesort_default`, `optimize_reloop_default` | bool |
+| `display_unit` | `"mm"` \| `"cm"` \| `"in"` — UI display only. PATCH cannot clear it back to `null`; that state only exists before any value has been saved. |
 
 Out-of-range values return `400`. The `api_key` field is **not** writable through this endpoint — to rotate the key, edit `config.json` on the Pi and restart the service.
 

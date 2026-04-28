@@ -48,7 +48,43 @@ let appSettings = {
   optimize_linesimplify_default: true,
   optimize_linesort_default: true,
   optimize_reloop_default: true,
+  display_unit: null,
 };
+
+// Length-unit conversion. Internal storage and inputs are always mm; this
+// table is for display-only formatting. Tolerance (vpype) keeps mm.
+const MM_TO = { mm: 1, cm: 0.1, in: 1 / 25.4 };
+
+// Initial-only fallback used when the user hasn't picked a unit yet:
+// en-US locale → inches, everywhere else → millimetres. Once the user
+// saves a choice, that value wins on every subsequent page load.
+function localeDefaultUnit() {
+  try {
+    const lang = (navigator.language || "").toLowerCase();
+    if (lang === "en-us" || lang.startsWith("en-us-")) return "in";
+  } catch {}
+  return "mm";
+}
+
+function effectiveDisplayUnit() {
+  const u = appSettings.display_unit;
+  if (u === "mm" || u === "cm" || u === "in") return u;
+  return localeDefaultUnit();
+}
+
+// mm renders as a whole number (paper presets are always integer mm anyway);
+// cm and in get one decimal so a 297 mm height shows as "29.7 cm" / "11.7 in".
+function formatLengthValue(mm, unit) {
+  unit = unit || effectiveDisplayUnit();
+  const v = mm * MM_TO[unit];
+  return unit === "mm" ? Math.round(v).toString() : v.toFixed(1);
+}
+
+function fmtLength(mm, unit) {
+  unit = unit || effectiveDisplayUnit();
+  if (mm == null || !isFinite(mm)) return "—";
+  return `${formatLengthValue(mm, unit)} ${unit}`;
+}
 
 // Paper size database (portrait dims). Landscape swaps them.
 const PAPER_SIZES = {
@@ -231,10 +267,35 @@ function injectNamedCustomOption(selectEl, job) {
   opt.dataset.name = job.paper_size_name;
   opt.dataset.w = String(job.paper_w_mm);
   opt.dataset.h = String(job.paper_h_mm);
-  opt.textContent = `${job.paper_size_name} (${Math.round(job.paper_w_mm)} × ${Math.round(job.paper_h_mm)} mm)`;
+  opt.textContent = formatPaperOptionLabel(job.paper_size_name, job.paper_w_mm, job.paper_h_mm);
   const customOpt = selectEl.querySelector('option[value="Custom"]');
   selectEl.insertBefore(opt, customOpt);
   return true;
+}
+
+function formatPaperOptionLabel(name, w_mm, h_mm) {
+  const u = effectiveDisplayUnit();
+  return `${name} (${formatLengthValue(w_mm, u)} × ${formatLengthValue(h_mm, u)} ${u})`;
+}
+
+// Re-format every option in a paper-size dropdown with the current display
+// unit. Static preset options always show portrait dims (matching the
+// existing convention); the named-custom option pulls live dims from its
+// dataset (kept in sync by readPaperFromCard on orientation flips).
+function relabelPaperOptions(selectEl) {
+  if (!selectEl) return;
+  selectEl.querySelectorAll("option").forEach((opt) => {
+    if (opt.value === "Custom") return;
+    if (opt.dataset.namedCustom === "1") {
+      const w = parseFloat(opt.dataset.w);
+      const h = parseFloat(opt.dataset.h);
+      opt.textContent = formatPaperOptionLabel(opt.dataset.name, w, h);
+      return;
+    }
+    const dims = PAPER_SIZES[opt.value];
+    if (!dims) return;
+    opt.textContent = formatPaperOptionLabel(opt.value, dims.w, dims.h);
+  });
 }
 
 // Resolve the current paper-size selection on a card to {w, h, paper_size_name}.
@@ -253,7 +314,7 @@ function readPaperFromCard(card) {
     // toggles so the dropdown text doesn't drift from the actual dimensions.
     opt.dataset.w = String(w);
     opt.dataset.h = String(h);
-    opt.textContent = `${opt.dataset.name} (${Math.round(w)} × ${Math.round(h)} mm)`;
+    opt.textContent = formatPaperOptionLabel(opt.dataset.name, w, h);
     return { w, h, paper_size_name: opt.dataset.name };
   }
   const customW = parseFloat(card.querySelector(".paper-w").value) || 210;
@@ -311,6 +372,7 @@ function createCardForJob(job) {
   // Populate paper-size options & defaults from job data
   const paperSize = card.querySelector(".paper-size");
   const namedInjected = injectNamedCustomOption(paperSize, job);
+  relabelPaperOptions(paperSize);
   if (namedInjected) {
     paperSize.value = "__named_custom__";
   } else {
@@ -526,7 +588,7 @@ function parseDimToMm(s) {
 
 function formatDim(s) {
   const v = parseDimToMm(s);
-  return v != null ? `${v.toFixed(1)} mm` : (s || "—");
+  return v != null ? fmtLength(v) : (s || "—");
 }
 
 function guessPresetFromDims(w, h) {
@@ -666,11 +728,18 @@ function updateCard(card, job) {
 }
 
 function formatPaperLabel(job) {
+  const u = effectiveDisplayUnit();
   if (job.paper_size_name) {
-    return `${job.paper_size_name} (${Math.round(job.paper_w_mm)} × ${Math.round(job.paper_h_mm)} mm)`;
+    const w = formatLengthValue(job.paper_w_mm, u);
+    const h = formatLengthValue(job.paper_h_mm, u);
+    return `${job.paper_size_name} (${w} × ${h} ${u})`;
   }
   const { preset, orientation } = guessPresetFromDims(job.paper_w_mm, job.paper_h_mm);
-  if (preset === "Custom") return `${Math.round(job.paper_w_mm)}×${Math.round(job.paper_h_mm)} mm`;
+  if (preset === "Custom") {
+    const w = formatLengthValue(job.paper_w_mm, u);
+    const h = formatLengthValue(job.paper_h_mm, u);
+    return `${w}×${h} ${u}`;
+  }
   return `${preset} ${orientation}`;
 }
 
@@ -1252,6 +1321,7 @@ const settingsOptimizeLinesimplify = $("settings-optimize-linesimplify");
 const settingsOptimizeLinesort = $("settings-optimize-linesort");
 const settingsOptimizeReloop = $("settings-optimize-reloop");
 const settingsOptimizeTolerance = $("settings-optimize-tolerance");
+const settingsDisplayUnit = $("settings-display-unit");
 settingsBtn.addEventListener("click", openSettings);
 $("settings-cancel").addEventListener("click", () => { settingsModal.hidden = true; });
 settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) settingsModal.hidden = true; });
@@ -1265,6 +1335,7 @@ settingsApiKeyCopy.addEventListener("click", async () => {
 });
 
 function applyAppSettings(data) {
+  const prevUnit = effectiveDisplayUnit();
   appSettings = {
     plotter_model: data.plotter_model ?? appSettings.plotter_model,
     pause_between_layers_default: data.pause_between_layers_default ?? appSettings.pause_between_layers_default,
@@ -1279,7 +1350,17 @@ function applyAppSettings(data) {
     optimize_linesimplify_default: data.optimize_linesimplify_default ?? appSettings.optimize_linesimplify_default,
     optimize_linesort_default: data.optimize_linesort_default ?? appSettings.optimize_linesort_default,
     optimize_reloop_default: data.optimize_reloop_default ?? appSettings.optimize_reloop_default,
+    display_unit: data.display_unit ?? appSettings.display_unit,
   };
+  if (effectiveDisplayUnit() !== prevUnit) refreshUnitDependentDisplays();
+}
+
+function refreshUnitDependentDisplays() {
+  cardEls.forEach((card, id) => {
+    relabelPaperOptions(card.querySelector(".paper-size"));
+    const job = serverState.queue.find((j) => j.id === id);
+    if (job) updateCard(card, job);
+  });
 }
 
 async function loadAppSettings() {
@@ -1309,6 +1390,7 @@ async function openSettings() {
     settingsOptimizeLinesort.checked = data.optimize_linesort_default !== false;
     settingsOptimizeReloop.checked = data.optimize_reloop_default !== false;
     settingsOptimizeTolerance.value = (data.optimize_tolerance_default_mm ?? 0.10).toFixed(2);
+    settingsDisplayUnit.value = data.display_unit || effectiveDisplayUnit();
     applySettingsOptimizeEnabledStyle();
     for (const sel of ["#settings-speed-pendown-slider", "#settings-speed-penup-slider", "#settings-accel-slider"]) {
       const s = document.querySelector(sel);
@@ -1336,6 +1418,7 @@ async function saveSettings() {
       optimize_linesimplify_default: settingsOptimizeLinesimplify.checked,
       optimize_linesort_default: settingsOptimizeLinesort.checked,
       optimize_reloop_default: settingsOptimizeReloop.checked,
+      display_unit: settingsDisplayUnit.value,
     };
     const res = await fetch("/settings", {
       method: "PATCH",
@@ -1371,6 +1454,10 @@ function resetSettingsJobOptions() {
   settingsPauseBetweenLayers.checked = true;
   settingsPauseAfterJob.checked = true;
   settingsDeleteOnComplete.checked = false;
+}
+
+function resetSettingsDisplay() {
+  settingsDisplayUnit.value = localeDefaultUnit();
 }
 
 function applySettingsOptimizeEnabledStyle() {
@@ -1483,6 +1570,7 @@ settingsModal.querySelectorAll(".card-section-reset").forEach((btn) => {
     if (btn.dataset.reset === "settings-speed") resetSettingsSpeed();
     else if (btn.dataset.reset === "settings-job-options") resetSettingsJobOptions();
     else if (btn.dataset.reset === "settings-optimize") resetSettingsOptimize();
+    else if (btn.dataset.reset === "settings-display") resetSettingsDisplay();
   });
 });
 

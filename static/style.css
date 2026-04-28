@@ -61,6 +61,26 @@ body > header h1 { margin: 0; font-size: 1.25rem; font-weight: 500; color: #222;
 }
 .modal-card h2 { margin-top: 0; margin-bottom: 1rem; font-size: 1.1rem; color: #222; text-transform: none; letter-spacing: 0; }
 .modal-card .actions { margin-top: 1rem; justify-content: flex-end; }
+/* Scrollable variant: cap height to ~90vh so the modal can't outgrow the
+   viewport, scroll the body, and keep h2/actions/message sticky. */
+.modal-card.scrollable {
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  overflow: hidden;
+}
+.modal-card.scrollable > .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Pull to the card edges so the scrollbar sits flush, then re-pad inside
+     so section content keeps the same horizontal spacing as before. */
+  margin: 0 -1.5rem;
+  padding: 0 1.5rem;
+}
+.modal-card.scrollable > h2,
+.modal-card.scrollable > .actions,
+.modal-card.scrollable > #settings-message { flex-shrink: 0; }
 
 .status {
   padding: 0.3rem 0.8rem;

@@ -38,8 +38,9 @@
   </div>
 
   <div id="settings-modal" class="modal" hidden>
-    <div class="modal-card">
+    <div class="modal-card scrollable">
       <h2>Settings</h2>
+      <div class="modal-body">
 
       <section class="card-section" data-section="plotter-model">
         <header class="card-section-head">
@@ -61,6 +62,24 @@
             </select>
           </label>
           <p class="muted">Plotter model sets the hardware working area — change only if the plotter itself is different.</p>
+        </div>
+      </section>
+
+      <section class="card-section" data-section="display">
+        <header class="card-section-head">
+          <span class="card-section-title">Display</span>
+          <button class="icon-btn card-section-reset" data-reset="settings-display" title="Restore default" aria-label="Restore default display">↺</button>
+          <span class="card-section-caret" aria-hidden="true">▼</span>
+        </header>
+        <div class="card-section-body">
+          <label class="field">
+            <span class="field-label">Length Unit</span>
+            <select id="settings-display-unit">
+              <option value="mm">Millimetres (mm)</option>
+              <option value="cm">Centimetres (cm)</option>
+              <option value="in">Inches (in)</option>
+            </select>
+          </label>
         </div>
       </section>
 
@@ -172,6 +191,7 @@
         </div>
       </section>
 
+      </div>
       <div class="actions">
         <button id="settings-cancel" class="neutral">Cancel</button>
         <button id="settings-save" class="primary">Save</button>

@@ -135,6 +135,7 @@ class SettingsUpdate(BaseModel):
     optimize_linesimplify_default: bool | None = None
     optimize_linesort_default: bool | None = None
     optimize_reloop_default: bool | None = None
+    display_unit: Literal["mm", "cm", "in"] | None = None
 
 
 class JobUpdate(BaseModel):
