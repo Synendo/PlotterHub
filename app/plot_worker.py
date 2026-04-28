@@ -455,6 +455,68 @@ def _effective_svg_path(job: dict) -> Path:
     return opt_path if opt_path.exists() else src
 
 
+def _run_optimize_phase(job_id: str, src_path: Path, stages: list) -> Path | None:
+    """Run vpype on ``src_path`` when the job has ``optimize`` enabled.
+
+    Return the SVG path the rest of the pipeline should use:
+      - the cached/freshly-produced ``.opt.svg`` when optimization ran,
+      - ``src_path`` unchanged when optimization is disabled,
+      - ``None`` when optimization failed or the user cancelled — the caller
+        should return immediately, the job has already been marked
+        ``failed`` / ``cancelled``.
+
+    Cache: keyed by ``_optimize_cache_key`` and stored on the job as
+    ``optimized_with_key`` so re-plots with unchanged settings reuse the file.
+    """
+    job = state.get_job(job_id)
+    if job is None or not job.get("optimize"):
+        return src_path
+
+    opt_path = src_path.with_name(f"{job['svg_id']}.opt.svg")
+    cache_key = _optimize_cache_key(job)
+    if opt_path.exists() and job.get("optimized_with_key") == cache_key:
+        return opt_path
+
+    state.update_job(job_id,
+                     status="optimizing",
+                     started_at=time.time(),
+                     plotting_started_at=None,
+                     error=None,
+                     stages=stages,
+                     current_stage_index=0)
+
+    cancelled = False
+    try:
+        svg_optimize.optimize_svg(
+            src_path, opt_path,
+            tolerance_mm=float(job.get("optimize_tolerance_mm", 0.10)),
+            linemerge=bool(job.get("optimize_linemerge", True)),
+            linesimplify=bool(job.get("optimize_linesimplify", True)),
+            linesort=bool(job.get("optimize_linesort", True)),
+            reloop=bool(job.get("optimize_reloop", True)),
+        )
+    except svg_optimize.OptimizeError as e:
+        # Cancel-via-terminate manifests as a non-zero rc — fall through to
+        # the cancelled cleanup below instead of surfacing a "failed".
+        if not _cancel_flag.is_set():
+            state.update_job(job_id, status="failed",
+                             error=f"Optimization failed: {e}")
+            return None
+        cancelled = True
+
+    if cancelled or _cancel_flag.is_set():
+        _cancel_flag.clear()
+        try:
+            opt_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        state.update_job(job_id, status="cancelled")
+        return None
+
+    state.update_job(job_id, optimized_with_key=cache_key)
+    return opt_path
+
+
 def _resume_job(job_id: str) -> None:
     """Resume a job left in 'paused' by a service restart.
 
@@ -473,7 +535,8 @@ def _resume_job(job_id: str) -> None:
 
 
 def _run_job(job_id: str) -> None:
-    """Plan + plot one job, possibly across multiple stages with pen-change pauses between."""
+    """Optimize (optional) + plan + plot one job, possibly across multiple
+    stages with pen-change pauses between."""
     job = state.get_job(job_id)
     if job is None:
         return
@@ -496,56 +559,10 @@ def _run_job(job_id: str) -> None:
 
     svg_path = _uploads() / f"{job['svg_id']}.svg"
 
-    # --- Optimization (vpype) ----------------------------------------------
-    # Runs once per job; cached as <svg_id>.opt.svg keyed by the optimize
-    # parameters. If the user PATCHes any optimize setting the key changes
-    # and we redo it on the next plot. The optimized file replaces svg_path
-    # for the rest of this run so filter+transform see the cleaned geometry.
-    if job.get("optimize"):
-        opt_path = svg_path.with_name(f"{job['svg_id']}.opt.svg")
-        cache_key = _optimize_cache_key(job)
-        needs_redo = (not opt_path.exists()) or (job.get("optimized_with_key") != cache_key)
-        if needs_redo:
-            state.update_job(job_id,
-                             status="optimizing",
-                             started_at=time.time(),
-                             plotting_started_at=None,
-                             error=None,
-                             stages=stages,
-                             current_stage_index=0)
-            try:
-                svg_optimize.optimize_svg(
-                    svg_path, opt_path,
-                    tolerance_mm=float(job.get("optimize_tolerance_mm", 0.10)),
-                    linemerge=bool(job.get("optimize_linemerge", True)),
-                    linesimplify=bool(job.get("optimize_linesimplify", True)),
-                    linesort=bool(job.get("optimize_linesort", True)),
-                    reloop=bool(job.get("optimize_reloop", True)),
-                )
-            except svg_optimize.OptimizeError as e:
-                # Cancel-via-terminate manifests as a non-zero rc; keep the
-                # cancelled status (don't surface a misleading "failed").
-                if _cancel_flag.is_set():
-                    _cancel_flag.clear()
-                    try:
-                        opt_path.unlink(missing_ok=True)
-                    except OSError:
-                        pass
-                    state.update_job(job_id, status="cancelled")
-                    return
-                state.update_job(job_id, status="failed",
-                                 error=f"Optimization failed: {e}")
-                return
-            if _cancel_flag.is_set():
-                _cancel_flag.clear()
-                try:
-                    opt_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                state.update_job(job_id, status="cancelled")
-                return
-            state.update_job(job_id, optimized_with_key=cache_key)
-        svg_path = opt_path
+    optimized = _run_optimize_phase(job_id, svg_path, stages)
+    if optimized is None:
+        return  # phase already marked the job as cancelled/failed
+    svg_path = optimized
 
     # --- Planning (preview) -------------------------------------------------
     state.update_job(job_id,
