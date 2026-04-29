@@ -15,7 +15,7 @@ def main() -> int:
     model = int(sys.argv[2])
     speed_pendown = int(sys.argv[3])
     speed_penup = int(sys.argv[4])
-    accel = int(sys.argv[5])
+    acceleration = int(sys.argv[5])
 
     ad = axidraw.AxiDraw()
     ad.plot_setup(svg_path)
@@ -24,7 +24,7 @@ def main() -> int:
     ad.options.model = model
     ad.options.speed_pendown = speed_pendown
     ad.options.speed_penup = speed_penup
-    ad.options.accel = accel
+    ad.options.accel = acceleration
     ad.plot_run()
 
     pen_lifts = 0

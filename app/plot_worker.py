@@ -72,8 +72,8 @@ def _preview_cache_key(svg_path: Path, layer_indices: list[int], job: dict) -> s
         h.update(str(svg_path).encode())
     payload = {
         "layers": sorted(layer_indices),
-        "paper_w": job["paper_w_mm"],
-        "paper_h": job["paper_h_mm"],
+        "paper_w": job["paper_width_mm"],
+        "paper_h": job["paper_height_mm"],
         "mt": job["margin_top_mm"],
         "mr": job["margin_right_mm"],
         "mb": job["margin_bottom_mm"],
@@ -86,7 +86,7 @@ def _preview_cache_key(svg_path: Path, layer_indices: list[int], job: dict) -> s
         "model": config.PLOTTER_MODEL,
         "sd": job["speed_pendown"],
         "su": job["speed_penup"],
-        "acc": job["accel"],
+        "acc": job["acceleration"],
     }
     h.update(json.dumps(payload, sort_keys=True).encode())
     return h.hexdigest()
@@ -214,7 +214,7 @@ def _run_stage(current_svg: Path, mode: str, job: dict) -> tuple[int, str]:
         ad.options.model = config.PLOTTER_MODEL
         ad.options.speed_pendown = job["speed_pendown"]
         ad.options.speed_penup = job["speed_penup"]
-        ad.options.accel = job["accel"]
+        ad.options.accel = job["acceleration"]
         _current_ad = ad
         _start_position_poll()
         output_svg = ad.plot_run(output=True)
@@ -238,7 +238,7 @@ def _run_preview(preview_svg_path: Path, job: dict) -> dict | None:
         str(config.PLOTTER_MODEL),
         str(job["speed_pendown"]),
         str(job["speed_penup"]),
-        str(job["accel"]),
+        str(job["acceleration"]),
     ]
     proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     _preview_proc = proc
@@ -291,7 +291,7 @@ def resume_active() -> None:
         if not job.get("resume_path"):
             raise RuntimeError("No resume data")
         _stop_button_poll()
-        state.update_job(job["id"], status="plotting", plotting_started_at=time.time())
+        state.update_job(job["job_id"], status="plotting", plotting_started_at=time.time())
         return
 
     # Post-restart scenario: no worker thread exists. Start the queue loop —
@@ -327,7 +327,7 @@ def cancel_active() -> None:
     # Post-restart: no worker thread to signal. Flip to cancelled directly;
     # the pen is wherever the user left it — they'll need to home manually.
     if _worker_thread is None or not _worker_thread.is_alive():
-        state.update_job(job["id"], status="cancelled", resume_path=None)
+        state.update_job(job["job_id"], status="cancelled", resume_path=None)
         state.set_active(None)
         return
 
@@ -354,7 +354,7 @@ def cancel_active() -> None:
         # The pause-wait loop polls the job's status (not _cancel_flag), so
         # flipping to 'homing' is what actually unblocks it. The loop then
         # runs res_home with the saved resume_path and marks the job cancelled.
-        state.update_job(job["id"], status="homing")
+        state.update_job(job["job_id"], status="homing")
     else:
         raise RuntimeError(f"Cannot cancel job in status '{st}'")
 
@@ -363,7 +363,7 @@ def shutdown_gracefully(timeout_s: float = 30.0) -> None:
     snap = state.snapshot()
     job = state.active_job()
     if job and job["status"] in ("plotting", "homing") and _current_ad is not None:
-        log.info("graceful shutdown: pausing active job %s", job["id"])
+        log.info("graceful shutdown: pausing active job %s", job["job_id"])
         try:
             _current_ad.transmit_pause_request()
         except Exception:
@@ -390,8 +390,8 @@ def _queue_loop() -> None:
             # job starts.
             paused = state.next_paused_job()
             if paused is not None:
-                state.set_active(paused["id"])
-                _resume_job(paused["id"])
+                state.set_active(paused["job_id"])
+                _resume_job(paused["job_id"])
                 state.set_active(None)
                 if _cancel_flag.is_set():
                     _cancel_flag.clear()
@@ -402,8 +402,8 @@ def _queue_loop() -> None:
                 job = state.next_queued_job()
                 if job is None:
                     return
-                state.set_active(job["id"])
-                _run_job(job["id"])
+                state.set_active(job["job_id"])
+                _run_job(job["job_id"])
                 state.set_active(None)
 
             if _cancel_flag.is_set():
@@ -412,7 +412,7 @@ def _queue_loop() -> None:
 
             # Between jobs: pause if the just-finished job asked for it and more queued
             if state.next_queued_job() is not None:
-                last = state.get_job(job["id"])
+                last = state.get_job(job["job_id"])
                 if last and last.get("pause_after_job", True):
                     state.set_awaiting_next_job(True)
                     _continue_event.wait()
@@ -434,11 +434,11 @@ def _optimize_cache_key(job: dict) -> str:
     user changes a setting that would actually change the output.
     """
     return "|".join([
-        f"t={float(job.get('optimize_tolerance_mm', 0.10)):.4f}",
-        f"lm={int(bool(job.get('optimize_linemerge', True)))}",
-        f"ls={int(bool(job.get('optimize_linesimplify', True)))}",
-        f"so={int(bool(job.get('optimize_linesort', True)))}",
-        f"rl={int(bool(job.get('optimize_reloop', True)))}",
+        f"t={float(job.get('optimize_svg_tolerance_mm', 0.10)):.4f}",
+        f"lm={int(bool(job.get('optimize_svg_linemerge', True)))}",
+        f"ls={int(bool(job.get('optimize_svg_linesimplify', True)))}",
+        f"so={int(bool(job.get('optimize_svg_linesort', True)))}",
+        f"rl={int(bool(job.get('optimize_svg_reloop', True)))}",
     ])
 
 
@@ -449,14 +449,14 @@ def _effective_svg_path(job: dict) -> Path:
     one downstream uses. Otherwise we fall back to the raw upload.
     """
     src = _uploads() / f"{job['svg_id']}.svg"
-    if not job.get("optimize"):
+    if not job.get("optimize_svg"):
         return src
     opt_path = src.with_name(f"{job['svg_id']}.opt.svg")
     return opt_path if opt_path.exists() else src
 
 
 def _run_optimize_phase(job_id: str, src_path: Path, stages: list) -> Path | None:
-    """Run vpype on ``src_path`` when the job has ``optimize`` enabled.
+    """Run vpype on ``src_path`` when the job has ``optimize_svg`` enabled.
 
     Return the SVG path the rest of the pipeline should use:
       - the cached/freshly-produced ``.opt.svg`` when optimization ran,
@@ -469,7 +469,7 @@ def _run_optimize_phase(job_id: str, src_path: Path, stages: list) -> Path | Non
     ``optimized_with_key`` so re-plots with unchanged settings reuse the file.
     """
     job = state.get_job(job_id)
-    if job is None or not job.get("optimize"):
+    if job is None or not job.get("optimize_svg"):
         return src_path
 
     opt_path = src_path.with_name(f"{job['svg_id']}.opt.svg")
@@ -489,11 +489,11 @@ def _run_optimize_phase(job_id: str, src_path: Path, stages: list) -> Path | Non
     try:
         svg_optimize.optimize_svg(
             src_path, opt_path,
-            tolerance_mm=float(job.get("optimize_tolerance_mm", 0.10)),
-            linemerge=bool(job.get("optimize_linemerge", True)),
-            linesimplify=bool(job.get("optimize_linesimplify", True)),
-            linesort=bool(job.get("optimize_linesort", True)),
-            reloop=bool(job.get("optimize_reloop", True)),
+            tolerance_mm=float(job.get("optimize_svg_tolerance_mm", 0.10)),
+            linemerge=bool(job.get("optimize_svg_linemerge", True)),
+            linesimplify=bool(job.get("optimize_svg_linesimplify", True)),
+            linesort=bool(job.get("optimize_svg_linesort", True)),
+            reloop=bool(job.get("optimize_svg_reloop", True)),
         )
     except svg_optimize.OptimizeError as e:
         # Cancel-via-terminate manifests as a non-zero rc — fall through to
@@ -591,7 +591,7 @@ def _run_job(job_id: str) -> None:
         preview_svg = svg_path.with_name(f"{job['svg_id']}.preview.svg")
         svg_utils.transform_to_paper(
             combined, preview_svg,
-            job["paper_w_mm"], job["paper_h_mm"],
+            job["paper_width_mm"], job["paper_height_mm"],
             job["margin_top_mm"], job["margin_right_mm"],
             job["margin_bottom_mm"], job["margin_left_mm"],
             job["fit_content"],
@@ -636,7 +636,7 @@ def _run_staged_loop(job_id: str, svg_path: Path, first_mode: str) -> None:
             current_svg = svg_path.with_name(f"{job['svg_id']}.s{i}.svg")
             svg_utils.transform_to_paper(
                 filtered, current_svg,
-                job["paper_w_mm"], job["paper_h_mm"],
+                job["paper_width_mm"], job["paper_height_mm"],
                 job["margin_top_mm"], job["margin_right_mm"],
                 job["margin_bottom_mm"], job["margin_left_mm"],
                 job["fit_content"],

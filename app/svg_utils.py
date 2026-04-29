@@ -72,8 +72,8 @@ def filter_to_layers(svg_path: Path, keep_indices: list[int], out_path: Path) ->
 def transform_to_paper(
     svg_path: Path,
     out_path: Path,
-    paper_w_mm: float,
-    paper_h_mm: float,
+    paper_width_mm: float,
+    paper_height_mm: float,
     margin_top_mm: float,
     margin_right_mm: float,
     margin_bottom_mm: float,
@@ -94,8 +94,8 @@ def transform_to_paper(
     tree = etree.parse(str(svg_path))
     root = tree.getroot()
 
-    orig_w_mm = parse_dim_to_mm(root.get("width", "")) or paper_w_mm
-    orig_h_mm = parse_dim_to_mm(root.get("height", "")) or paper_h_mm
+    orig_w_mm = parse_dim_to_mm(root.get("width", "")) or paper_width_mm
+    orig_h_mm = parse_dim_to_mm(root.get("height", "")) or paper_height_mm
 
     vb = root.get("viewBox", "")
     if vb:
@@ -105,8 +105,8 @@ def transform_to_paper(
         vb_x, vb_y = 0.0, 0.0
         vb_w, vb_h = orig_w_mm, orig_h_mm
 
-    available_w = max(0.0, paper_w_mm - margin_left_mm - margin_right_mm)
-    available_h = max(0.0, paper_h_mm - margin_top_mm - margin_bottom_mm)
+    available_w = max(0.0, paper_width_mm - margin_left_mm - margin_right_mm)
+    available_h = max(0.0, paper_height_mm - margin_top_mm - margin_bottom_mm)
 
     if fit_content and orig_w_mm > 0 and orig_h_mm > 0 and available_w > 0 and available_h > 0:
         fit_scale = min(available_w / orig_w_mm, available_h / orig_h_mm)
@@ -128,9 +128,9 @@ def transform_to_paper(
     nsmap = {k: v for k, v in root.nsmap.items() if k}
     nsmap[None] = SVG_NS
     new_root = etree.Element(f"{{{SVG_NS}}}svg", nsmap=nsmap)
-    new_root.set("width", f"{paper_w_mm}mm")
-    new_root.set("height", f"{paper_h_mm}mm")
-    new_root.set("viewBox", f"0 0 {paper_w_mm} {paper_h_mm}")
+    new_root.set("width", f"{paper_width_mm}mm")
+    new_root.set("height", f"{paper_height_mm}mm")
+    new_root.set("viewBox", f"0 0 {paper_width_mm} {paper_height_mm}")
 
     group = etree.SubElement(new_root, f"{{{SVG_NS}}}g")
     group.set(

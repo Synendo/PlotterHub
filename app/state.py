@@ -88,10 +88,10 @@ def _load_from_disk() -> None:
     raw = data.get("queue") or []
     rehydrated: list[dict] = []
     for job in raw:
-        if not isinstance(job, dict) or "id" not in job or "svg_id" not in job:
+        if not isinstance(job, dict) or "job_id" not in job or "svg_id" not in job:
             continue
         if not (UPLOAD_DIR / f"{job['svg_id']}.svg").exists():
-            log.info("state: dropping job %s — source SVG missing", job.get("id"))
+            log.info("state: dropping job %s — source SVG missing", job.get("job_id"))
             continue
         status = job.get("status")
         resume_path = job.get("resume_path")
@@ -121,7 +121,7 @@ def _load_from_disk() -> None:
     # button is wired up without needing a live worker thread.
     for j in _queue:
         if j["status"] == "paused":
-            _active_id = j["id"]
+            _active_id = j["job_id"]
             break
 
     log.info("state: loaded %d job(s) from %s", len(_queue), STATE_PATH)
@@ -163,7 +163,7 @@ def _derive_top_status() -> str:
 
 def _get(job_id: str) -> dict | None:
     for j in _queue:
-        if j["id"] == job_id:
+        if j["job_id"] == job_id:
             return j
     return None
 
@@ -187,7 +187,7 @@ def add_job(job: dict) -> dict:
 
 def _make_record(data: dict) -> dict:
     return {
-        "id": uuid.uuid4().hex[:8],
+        "job_id": uuid.uuid4().hex[:8],
         "status": "queued",
         "created_at": time.time(),
         "stages": [],
@@ -229,7 +229,7 @@ def update_job_silent(job_id: str, **updates) -> None:
 def remove_job(job_id: str) -> bool:
     global _queue
     before = len(_queue)
-    _queue = [j for j in _queue if j["id"] != job_id]
+    _queue = [j for j in _queue if j["job_id"] != job_id]
     if len(_queue) < before:
         _persist()
         _broadcast()
@@ -242,7 +242,7 @@ def move_job(job_id: str, new_index: int) -> bool:
     j = _get(job_id)
     if j is None:
         return False
-    _queue = [x for x in _queue if x["id"] != job_id]
+    _queue = [x for x in _queue if x["job_id"] != job_id]
     new_index = max(0, min(new_index, len(_queue)))
     _queue.insert(new_index, j)
     _persist()

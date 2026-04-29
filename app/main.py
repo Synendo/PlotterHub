@@ -89,28 +89,28 @@ def get_svg(svg_id: str):
 
 # Jobs -------------------------------------------------------------------
 #
-# The optimize_* fields appear in three shapes:
+# The optimize_svg_* fields appear in three shapes:
 #   - JobCreate (web POST):           required-with-defaults
 #   - JobUpdate (web PATCH):          all-Optional, no defaults
 #   - ApiJobMetadata (public POST):   all-Optional, server fills missing values
 # Two mixins capture the variants so we don't repeat the field list three times.
 
 class _OptimizeCreateFields(BaseModel):
-    optimize: bool = False
-    optimize_tolerance_mm: float = Field(0.10, ge=0.01, le=10.0)
-    optimize_linemerge: bool = True
-    optimize_linesimplify: bool = True
-    optimize_linesort: bool = True
-    optimize_reloop: bool = True
+    optimize_svg: bool = False
+    optimize_svg_tolerance_mm: float = Field(0.10, ge=0.01, le=10.0)
+    optimize_svg_linemerge: bool = True
+    optimize_svg_linesimplify: bool = True
+    optimize_svg_linesort: bool = True
+    optimize_svg_reloop: bool = True
 
 
 class _OptimizeOptionalFields(BaseModel):
-    optimize: bool | None = None
-    optimize_tolerance_mm: float | None = Field(None, ge=0.01, le=10.0)
-    optimize_linemerge: bool | None = None
-    optimize_linesimplify: bool | None = None
-    optimize_linesort: bool | None = None
-    optimize_reloop: bool | None = None
+    optimize_svg: bool | None = None
+    optimize_svg_tolerance_mm: float | None = Field(None, ge=0.01, le=10.0)
+    optimize_svg_linemerge: bool | None = None
+    optimize_svg_linesimplify: bool | None = None
+    optimize_svg_linesort: bool | None = None
+    optimize_svg_reloop: bool | None = None
 
 
 class JobCreate(_OptimizeCreateFields):
@@ -122,8 +122,8 @@ class JobCreate(_OptimizeCreateFields):
     pause_between_layers: bool = True
     pause_after_job: bool = True
     delete_on_complete: bool = False
-    paper_w_mm: float
-    paper_h_mm: float
+    paper_width_mm: float
+    paper_height_mm: float
     margin_top_mm: float = 0.0
     margin_right_mm: float = 0.0
     margin_bottom_mm: float = 0.0
@@ -135,7 +135,7 @@ class JobCreate(_OptimizeCreateFields):
     transform_offset_y_mm: float = 0.0
     speed_pendown: int = 25
     speed_penup: int = 75
-    accel: int = 75
+    acceleration: int = 75
 
 
 class MoveRequest(BaseModel):
@@ -149,13 +149,13 @@ class SettingsUpdate(BaseModel):
     delete_on_complete_default: bool | None = None
     speed_pendown_default: int | None = Field(None, ge=1, le=110)
     speed_penup_default: int | None = Field(None, ge=1, le=110)
-    accel_default: int | None = Field(None, ge=1, le=100)
-    optimize_default: bool | None = None
-    optimize_tolerance_default_mm: float | None = Field(None, ge=0.01, le=10.0)
-    optimize_linemerge_default: bool | None = None
-    optimize_linesimplify_default: bool | None = None
-    optimize_linesort_default: bool | None = None
-    optimize_reloop_default: bool | None = None
+    acceleration_default: int | None = Field(None, ge=1, le=100)
+    optimize_svg_default: bool | None = None
+    optimize_svg_tolerance_default_mm: float | None = Field(None, ge=0.01, le=10.0)
+    optimize_svg_linemerge_default: bool | None = None
+    optimize_svg_linesimplify_default: bool | None = None
+    optimize_svg_linesort_default: bool | None = None
+    optimize_svg_reloop_default: bool | None = None
     display_unit: Literal["mm", "cm", "in"] | None = None
 
 
@@ -166,8 +166,8 @@ class JobUpdate(_OptimizeOptionalFields):
     pause_between_layers: bool | None = None
     pause_after_job: bool | None = None
     delete_on_complete: bool | None = None
-    paper_w_mm: float | None = None
-    paper_h_mm: float | None = None
+    paper_width_mm: float | None = None
+    paper_height_mm: float | None = None
     margin_top_mm: float | None = None
     margin_right_mm: float | None = None
     margin_bottom_mm: float | None = None
@@ -179,7 +179,7 @@ class JobUpdate(_OptimizeOptionalFields):
     transform_offset_y_mm: float | None = None
     speed_pendown: int | None = None
     speed_penup: int | None = None
-    accel: int | None = None
+    acceleration: int | None = None
 
 
 @app.post("/jobs")
@@ -286,13 +286,17 @@ class ApiJobMetadata(_OptimizeOptionalFields):
     delete_on_complete: bool | None = None
     speed_pendown: int | None = Field(default=None, ge=1, le=110)
     speed_penup: int | None = Field(default=None, ge=1, le=110)
-    accel: int | None = Field(default=None, ge=1, le=100)
+    acceleration: int | None = Field(default=None, ge=1, le=100)
+    # Request-only directive: when true AND the queue is empty at the moment of
+    # the POST, kick off the worker so this job plots immediately. Not stored
+    # on the job record.
+    auto_plot: bool = False
 
 
 def _resolve_paper(paper: ApiPaperSize | None,
                    svg_w_mm: float | None,
                    svg_h_mm: float | None) -> tuple[float, float, str | None]:
-    """Return (paper_w_mm, paper_h_mm, display_name)."""
+    """Return (paper_width_mm, paper_height_mm, display_name)."""
     if paper is None:
         # Auto-detect from SVG dimensions, like the web UI does on a fresh upload.
         return float(svg_w_mm or 210.0), float(svg_h_mm or 297.0), None
@@ -345,7 +349,7 @@ async def api_create_job(file: UploadFile = File(...),
         path.unlink(missing_ok=True)
         raise HTTPException(400, f"invalid SVG: {e}")
 
-    paper_w_mm, paper_h_mm, paper_name = _resolve_paper(
+    paper_width_mm, paper_height_mm, paper_name = _resolve_paper(
         meta.paper_size, info.get("width_mm"), info.get("height_mm"),
     )
 
@@ -385,8 +389,8 @@ async def api_create_job(file: UploadFile = File(...),
         "pause_between_layers": pick(meta.pause_between_layers, config.PAUSE_BETWEEN_LAYERS_DEFAULT),
         "pause_after_job": pick(meta.pause_after_job, config.PAUSE_AFTER_JOB_DEFAULT),
         "delete_on_complete": pick(meta.delete_on_complete, config.DELETE_ON_COMPLETE_DEFAULT),
-        "paper_w_mm": paper_w_mm,
-        "paper_h_mm": paper_h_mm,
+        "paper_width_mm": paper_width_mm,
+        "paper_height_mm": paper_height_mm,
         "margin_top_mm": 0.0,
         "margin_right_mm": 0.0,
         "margin_bottom_mm": 0.0,
@@ -398,15 +402,26 @@ async def api_create_job(file: UploadFile = File(...),
         "transform_offset_y_mm": 0.0,
         "speed_pendown": pick(meta.speed_pendown, config.SPEED_PENDOWN_DEFAULT),
         "speed_penup": pick(meta.speed_penup, config.SPEED_PENUP_DEFAULT),
-        "accel": pick(meta.accel, config.ACCEL_DEFAULT),
-        "optimize": pick(meta.optimize, config.OPTIMIZE_DEFAULT),
-        "optimize_tolerance_mm": pick(meta.optimize_tolerance_mm, config.OPTIMIZE_TOLERANCE_DEFAULT_MM),
-        "optimize_linemerge": pick(meta.optimize_linemerge, config.OPTIMIZE_LINEMERGE_DEFAULT),
-        "optimize_linesimplify": pick(meta.optimize_linesimplify, config.OPTIMIZE_LINESIMPLIFY_DEFAULT),
-        "optimize_linesort": pick(meta.optimize_linesort, config.OPTIMIZE_LINESORT_DEFAULT),
-        "optimize_reloop": pick(meta.optimize_reloop, config.OPTIMIZE_RELOOP_DEFAULT),
+        "acceleration": pick(meta.acceleration, config.ACCELERATION_DEFAULT),
+        "optimize_svg": pick(meta.optimize_svg, config.OPTIMIZE_SVG_DEFAULT),
+        "optimize_svg_tolerance_mm": pick(meta.optimize_svg_tolerance_mm, config.OPTIMIZE_SVG_TOLERANCE_DEFAULT_MM),
+        "optimize_svg_linemerge": pick(meta.optimize_svg_linemerge, config.OPTIMIZE_SVG_LINEMERGE_DEFAULT),
+        "optimize_svg_linesimplify": pick(meta.optimize_svg_linesimplify, config.OPTIMIZE_SVG_LINESIMPLIFY_DEFAULT),
+        "optimize_svg_linesort": pick(meta.optimize_svg_linesort, config.OPTIMIZE_SVG_LINESORT_DEFAULT),
+        "optimize_svg_reloop": pick(meta.optimize_svg_reloop, config.OPTIMIZE_SVG_RELOOP_DEFAULT),
     }
-    return state.add_job(job_payload)
+    # auto_plot: only kick the worker if no other job is in a runnable or
+    # in-progress state (queued / paused / plotting / planning / optimizing /
+    # homing / awaiting_pen_change). Terminal-state leftovers (completed /
+    # failed / cancelled) don't block — they're inert.
+    _TERMINAL = {"completed", "failed", "cancelled"}
+    blockers_present = any(
+        j["status"] not in _TERMINAL for j in state.snapshot()["queue"]
+    )
+    job = state.add_job(job_payload)
+    if meta.auto_plot and not blockers_present:
+        plot_worker.start_queue()
+    return job
 
 
 # Queue control (public) ---------------------------------------------------
@@ -498,12 +513,18 @@ def api_requeue_job(job_id: str):
 
 @app.get("/api/v1/settings", dependencies=[Depends(require_api_key)])
 def api_get_settings():
-    return get_settings()
+    # Drop api_key — the caller already needed it to authenticate this request,
+    # so re-emitting it would just be noise.
+    snap = get_settings()
+    snap.pop("api_key", None)
+    return snap
 
 
 @app.patch("/api/v1/settings", dependencies=[Depends(require_api_key)])
 def api_patch_settings(req: SettingsUpdate):
-    return patch_settings(req)
+    snap = patch_settings(req)
+    snap.pop("api_key", None)
+    return snap
 
 
 # System (public) ---------------------------------------------------------

@@ -71,20 +71,29 @@ All fields are optional. Unspecified booleans, speeds, and `selected` flags fall
   "pause_after_job":      true,       // Pause after this job finishes (paper / pen swap before next).
   "delete_on_complete":   false,      // Auto-remove the job and its uploaded SVG once complete.
 
+  // Request-only directive (not stored on the job record). When `true` AND
+  // no other job is in a runnable or in-progress state (queued / paused /
+  // plotting / planning / optimizing / homing / awaiting_pen_change), the
+  // worker is started so this job plots immediately. Terminal-state leftovers
+  // (`completed` / `failed` / `cancelled`) are inert and do *not* block
+  // auto_plot. If a runnable/in-progress job exists, auto_plot is ignored —
+  // you'd need to wait for it to finish or hit `/queue/plot` yourself.
+  "auto_plot": false,                 // Default false.
+
   // Plotter speed — omit any field to inherit the server default. Out-of-range values return 400.
   "speed_pendown": 30,                // 1–110
   "speed_penup":   80,                // 1–110
-  "accel":         50,                // 1–100
+  "acceleration":  50,                // 1–100
 
   // SVG optimization (vpype). Omit any field to inherit the server default.
   // The optimized SVG is cached per job and reused across re-plots; changing
   // any field below invalidates the cache and re-runs the pipeline.
-  "optimize":              true,      // Master toggle. When false the rest is ignored.
-  "optimize_tolerance_mm": 0.10,      // 0.01–10.0; used by linemerge + linesimplify.
-  "optimize_linemerge":    true,      // Stitch lines whose endpoints are within tolerance.
-  "optimize_linesimplify": true,      // Reduce vertex count (Douglas-Peucker).
-  "optimize_linesort":     true,      // Reorder lines to cut pen-up travel.
-  "optimize_reloop":       true,      // Randomize closed-path start (cosmetic).
+  "optimize_svg":              true,  // Master toggle. When false the rest is ignored.
+  "optimize_svg_tolerance_mm": 0.10,  // 0.01–10.0; used by linemerge + linesimplify.
+  "optimize_svg_linemerge":    true,  // Stitch lines whose endpoints are within tolerance.
+  "optimize_svg_linesimplify": true,  // Reduce vertex count (Douglas-Peucker).
+  "optimize_svg_linesort":     true,  // Reorder lines to cut pen-up travel.
+  "optimize_svg_reloop":       true,  // Randomize closed-path start (cosmetic).
 
   "layers": [                         // Per-layer overrides keyed by SVG layer index.
     {
@@ -125,7 +134,7 @@ Layer types are decorative — the icon is shown in the layer list:
 
 ```jsonc
 {
-  "id": "abc12345",                   // Job ID — use this for future per-job actions.
+  "job_id": "abc12345",               // Job ID — use this for future per-job actions.
   "status": "queued",
   "created_at": 1777212168.88,
   "svg_id": "1ebd8a27",
@@ -137,14 +146,14 @@ Layer types are decorative — the icon is shown in the layer list:
     { "index": 1, "label": "Text",      "type": "text" },
     { "index": 2, "label": "Logo",      "type": "svg" }
   ],
-  "paper_w_mm": 420.0,
-  "paper_h_mm": 297.0,
+  "paper_width_mm": 420.0,             // Always millimetres, regardless of input unit.
+  "paper_height_mm": 297.0,
   "pause_between_layers": true,       // From server-side defaults (Settings).
   "pause_after_job": true,
   "delete_on_complete": false,
   "speed_pendown": 25,
   "speed_penup": 75,
-  "accel": 75
+  "acceleration": 75
   // ... margins, transforms, timing fields, etc.
 }
 ```
@@ -218,11 +227,11 @@ Returns the full queue snapshot, mirroring what the WebSocket broadcasts:
 }
 ```
 
-#### `GET /api/v1/jobs/{id}` — get one
+#### `GET /api/v1/jobs/{job_id}` — get one
 
 Returns the full job record (same shape as the `POST /api/v1/jobs` response).
 
-#### `PATCH /api/v1/jobs/{id}` — edit
+#### `PATCH /api/v1/jobs/{job_id}` — edit
 
 Body is JSON. All fields optional; only the fields you send are applied. To clear a nullable field (e.g. `paper_size_name`), send it explicitly as `null` — *omitted* fields are ignored, *null* fields are cleared.
 
@@ -232,33 +241,33 @@ Editable fields:
 |---|---|---|
 | `name` | string \| null | Display name override. |
 | `paper_size_name` | string \| null | Display label for the paper size. |
-| `paper_w_mm`, `paper_h_mm` | number | Paper dimensions in mm. |
+| `paper_width_mm`, `paper_height_mm` | number | Paper dimensions; always in mm. |
 | `margin_top_mm`, `margin_right_mm`, `margin_bottom_mm`, `margin_left_mm` | number | |
 | `fit_content` | bool | Scale SVG to fit the printable area. |
 | `transform_scale` | number | 0.01–5.0 |
 | `transform_rotation_deg` | number | 0–360 |
 | `transform_offset_x_mm`, `transform_offset_y_mm` | number | |
 | `speed_pendown`, `speed_penup` | int | 1–110 |
-| `accel` | int | 1–100 |
+| `acceleration` | int | 1–100 |
 | `pause_between_layers`, `pause_after_job`, `delete_on_complete` | bool | |
-| `optimize` | bool | Run the vpype optimization pipeline before planning. |
-| `optimize_tolerance_mm` | number | 0.01–10.0 |
-| `optimize_linemerge`, `optimize_linesimplify`, `optimize_linesort`, `optimize_reloop` | bool | Per-step toggles for the vpype pipeline. |
+| `optimize_svg` | bool | Run the vpype optimization pipeline before planning. |
+| `optimize_svg_tolerance_mm` | number | 0.01–10.0 |
+| `optimize_svg_linemerge`, `optimize_svg_linesimplify`, `optimize_svg_linesort`, `optimize_svg_reloop` | bool | Per-step toggles for the vpype pipeline. |
 | `layer_selections` | array | `[{index, label, type?, selected?}]` — drives which layers plot. Entries with `selected: false` are kept in the list (so name/type metadata survives a toggle in the UI) but skipped when planning. |
 
 Returns the full updated job record. **`409 Conflict`** if the job is currently active (`plotting`, `planning`, `paused`, `awaiting_pen_change`, `homing`).
 
 A side-effect to be aware of: editing a job that's in a terminal state (`completed`, `failed`, `cancelled`) automatically transitions it back to `queued` so a re-plot doesn't need a separate `/requeue` call.
 
-#### `POST /api/v1/jobs/{id}/move` — reorder
+#### `POST /api/v1/jobs/{job_id}/move` — reorder
 
 Body: `{"new_index": <0-based int>}`. Returns `{"ok": true}`. **`409 Conflict`** if the job is active.
 
-#### `POST /api/v1/jobs/{id}/requeue` — re-queue
+#### `POST /api/v1/jobs/{job_id}/requeue` — re-queue
 
 No body. Returns the updated job record. Idempotent on jobs that are already `queued` (returns the existing record). **`409 Conflict`** if the job is active.
 
-#### `DELETE /api/v1/jobs/{id}` — remove
+#### `DELETE /api/v1/jobs/{job_id}` — remove
 
 No body. Returns `{"ok": true}`. Removes the job from the queue **and deletes the uploaded SVG** plus all on-disk derivatives (preview / filtered / staged / resume). **`409 Conflict`** if the job is active.
 
@@ -308,25 +317,24 @@ Server-wide defaults that new jobs inherit (the same set the web UI exposes in i
 
 #### `GET /api/v1/settings`
 
-Returns the current snapshot:
+Returns the current snapshot. The `api_key` is never echoed back — clients already have it (they used it to authenticate this request).
 
 ```jsonc
 {
-  "plotter_model": 2,                       // 1–8 (see install.sh / Settings UI for the table)
-  "api_key": "tnBvwhc8VMdew8hMjlp6GdpTtAxN_7pG",
+  "plotter_model": 2,                           // 1–8 (see install.sh / Settings UI for the table)
   "pause_between_layers_default": true,
   "pause_after_job_default": true,
   "delete_on_complete_default": false,
-  "speed_pendown_default": 25,              // 1–110
-  "speed_penup_default": 75,                // 1–110
-  "accel_default": 75,                      // 1–100
-  "optimize_default": false,                // Run vpype before plotting on new jobs
-  "optimize_tolerance_default_mm": 0.10,    // 0.01–10.0
-  "optimize_linemerge_default": true,
-  "optimize_linesimplify_default": true,
-  "optimize_linesort_default": true,
-  "optimize_reloop_default": true,
-  "display_unit": null                      // null | "mm" | "cm" | "in" — UI labels only
+  "speed_pendown_default": 25,                  // 1–110
+  "speed_penup_default": 75,                    // 1–110
+  "acceleration_default": 75,                   // 1–100
+  "optimize_svg_default": true,                 // Run vpype before plotting on new jobs
+  "optimize_svg_tolerance_default_mm": 0.10,    // 0.01–10.0
+  "optimize_svg_linemerge_default": true,
+  "optimize_svg_linesimplify_default": true,
+  "optimize_svg_linesort_default": true,
+  "optimize_svg_reloop_default": true,
+  "display_unit": null                          // null | "mm" | "cm" | "in" — UI labels only
 }
 ```
 
@@ -344,13 +352,13 @@ Body is sparse JSON — only the fields you send are applied. Returns the new sn
 | `delete_on_complete_default` | bool |
 | `speed_pendown_default` | int 1–110 |
 | `speed_penup_default` | int 1–110 |
-| `accel_default` | int 1–100 |
-| `optimize_default` | bool |
-| `optimize_tolerance_default_mm` | float 0.01–10.0 |
-| `optimize_linemerge_default`, `optimize_linesimplify_default`, `optimize_linesort_default`, `optimize_reloop_default` | bool |
+| `acceleration_default` | int 1–100 |
+| `optimize_svg_default` | bool |
+| `optimize_svg_tolerance_default_mm` | float 0.01–10.0 |
+| `optimize_svg_linemerge_default`, `optimize_svg_linesimplify_default`, `optimize_svg_linesort_default`, `optimize_svg_reloop_default` | bool |
 | `display_unit` | `"mm"` \| `"cm"` \| `"in"` — UI display only. PATCH cannot clear it back to `null`; that state only exists before any value has been saved. |
 
-Out-of-range values return `400`. The `api_key` field is **not** writable through this endpoint — to rotate the key, edit `config.json` on the Pi and restart the service.
+Out-of-range values return `400`. The API key cannot be set through this endpoint — to rotate it, edit `config.json` on the Pi and restart the service.
 
 ```bash
 curl -X PATCH http://plotterhub.local/api/v1/settings \
@@ -381,7 +389,3 @@ Powers off the Raspberry Pi. The HTTP response is flushed first, then the system
 curl -X POST http://plotterhub.local/api/v1/system/shutdown \
   -H "X-API-Key: $PLOTTERHUB_API_KEY"
 ```
-
-## Roadmap
-
-All currently planned endpoints are implemented. Future additions will be documented here as they land.

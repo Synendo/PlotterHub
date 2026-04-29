@@ -41,13 +41,13 @@ let appSettings = {
   delete_on_complete_default: false,
   speed_pendown_default: 25,
   speed_penup_default: 75,
-  accel_default: 75,
-  optimize_default: false,
-  optimize_tolerance_default_mm: 0.10,
-  optimize_linemerge_default: true,
-  optimize_linesimplify_default: true,
-  optimize_linesort_default: true,
-  optimize_reloop_default: true,
+  acceleration_default: 75,
+  optimize_svg_default: false,
+  optimize_svg_tolerance_default_mm: 0.10,
+  optimize_svg_linemerge_default: true,
+  optimize_svg_linesimplify_default: true,
+  optimize_svg_linesort_default: true,
+  optimize_svg_reloop_default: true,
   display_unit: null,
 };
 
@@ -201,8 +201,8 @@ async function uploadAndQueue(file) {
       pause_between_layers: appSettings.pause_between_layers_default,
       pause_after_job: appSettings.pause_after_job_default,
       delete_on_complete: appSettings.delete_on_complete_default,
-      paper_w_mm: w,
-      paper_h_mm: h,
+      paper_width_mm: w,
+      paper_height_mm: h,
       margin_top_mm: 0,
       margin_right_mm: 0,
       margin_bottom_mm: 0,
@@ -214,13 +214,13 @@ async function uploadAndQueue(file) {
       transform_offset_y_mm: 0,
       speed_pendown: appSettings.speed_pendown_default,
       speed_penup: appSettings.speed_penup_default,
-      accel: appSettings.accel_default,
-      optimize: appSettings.optimize_default,
-      optimize_tolerance_mm: appSettings.optimize_tolerance_default_mm,
-      optimize_linemerge: appSettings.optimize_linemerge_default,
-      optimize_linesimplify: appSettings.optimize_linesimplify_default,
-      optimize_linesort: appSettings.optimize_linesort_default,
-      optimize_reloop: appSettings.optimize_reloop_default,
+      acceleration: appSettings.acceleration_default,
+      optimize_svg: appSettings.optimize_svg_default,
+      optimize_svg_tolerance_mm: appSettings.optimize_svg_tolerance_default_mm,
+      optimize_svg_linemerge: appSettings.optimize_svg_linemerge_default,
+      optimize_svg_linesimplify: appSettings.optimize_svg_linesimplify_default,
+      optimize_svg_linesort: appSettings.optimize_svg_linesort_default,
+      optimize_svg_reloop: appSettings.optimize_svg_reloop_default,
     };
     const jobRes = await fetch("/jobs", {
       method: "POST",
@@ -256,7 +256,7 @@ function detectPaper(w_mm, h_mm) {
 function injectNamedCustomOption(selectEl, job) {
   selectEl.querySelectorAll('option[data-named-custom="1"]').forEach((o) => o.remove());
   if (!job.paper_size_name) return false;
-  const guessed = guessPresetFromDims(job.paper_w_mm, job.paper_h_mm);
+  const guessed = guessPresetFromDims(job.paper_width_mm, job.paper_height_mm);
   if (guessed.preset !== "Custom" &&
       guessed.preset.toLowerCase() === job.paper_size_name.toLowerCase()) {
     return false;
@@ -265,9 +265,9 @@ function injectNamedCustomOption(selectEl, job) {
   opt.value = "__named_custom__";
   opt.dataset.namedCustom = "1";
   opt.dataset.name = job.paper_size_name;
-  opt.dataset.w = String(job.paper_w_mm);
-  opt.dataset.h = String(job.paper_h_mm);
-  opt.textContent = formatPaperOptionLabel(job.paper_size_name, job.paper_w_mm, job.paper_h_mm);
+  opt.dataset.w = String(job.paper_width_mm);
+  opt.dataset.h = String(job.paper_height_mm);
+  opt.textContent = formatPaperOptionLabel(job.paper_size_name, job.paper_width_mm, job.paper_height_mm);
   const customOpt = selectEl.querySelector('option[value="Custom"]');
   selectEl.insertBefore(opt, customOpt);
   return true;
@@ -338,7 +338,7 @@ function computePaperDims(preset, orientation, customW, customH) {
 // ───── Queue rendering ───────────────────────────────────────────────────
 
 function renderQueue() {
-  const ids = new Set(serverState.queue.map((j) => j.id));
+  const ids = new Set(serverState.queue.map((j) => j.job_id));
   // Remove cards for jobs that no longer exist
   for (const id of Array.from(cardEls.keys())) {
     if (!ids.has(id)) {
@@ -350,10 +350,10 @@ function renderQueue() {
   // Append/move cards in order
   for (let i = 0; i < serverState.queue.length; i++) {
     const job = serverState.queue[i];
-    let card = cardEls.get(job.id);
+    let card = cardEls.get(job.job_id);
     if (!card) {
       card = createCardForJob(job);
-      cardEls.set(job.id, card);
+      cardEls.set(job.job_id, card);
     }
     if (card.parentElement !== queueList || Array.from(queueList.children).indexOf(card) !== i) {
       queueList.insertBefore(card, queueList.children[i] || null);
@@ -367,7 +367,7 @@ function renderQueue() {
 function createCardForJob(job) {
   const frag = jobCardTemplate.content.cloneNode(true);
   const card = frag.querySelector(".job-card");
-  card.dataset.id = job.id;
+  card.dataset.id = job.job_id;
 
   // Populate paper-size options & defaults from job data
   const paperSize = card.querySelector(".paper-size");
@@ -376,17 +376,17 @@ function createCardForJob(job) {
   if (namedInjected) {
     paperSize.value = "__named_custom__";
   } else {
-    paperSize.value = guessPresetFromDims(job.paper_w_mm, job.paper_h_mm).preset;
+    paperSize.value = guessPresetFromDims(job.paper_width_mm, job.paper_height_mm).preset;
   }
-  const orientation = guessPresetFromDims(job.paper_w_mm, job.paper_h_mm).orientation;
+  const orientation = guessPresetFromDims(job.paper_width_mm, job.paper_height_mm).orientation;
   setSegmentedValue(card.querySelector(".orientation"), orientation);
   // The `custom-dims` block is `hidden` in the template; only `onPaperChange`
   // reveals it. Sync visibility on initial render so a job that arrives with
   // Custom selected actually shows its dimension fields.
   card.querySelector(".custom-dims").hidden = paperSize.value !== "Custom";
 
-  card.querySelector(".paper-w").value = job.paper_w_mm;
-  card.querySelector(".paper-h").value = job.paper_h_mm;
+  card.querySelector(".paper-w").value = job.paper_width_mm;
+  card.querySelector(".paper-h").value = job.paper_height_mm;
   card.querySelector(".margin-top").value = job.margin_top_mm || 0;
   card.querySelector(".margin-right").value = job.margin_right_mm || 0;
   card.querySelector(".margin-bottom").value = job.margin_bottom_mm || 0;
@@ -396,19 +396,19 @@ function createCardForJob(job) {
   card.querySelector(".transform-rotation").value = job.transform_rotation_deg ?? 0;
   card.querySelector(".transform-offset-x").value = job.transform_offset_x_mm ?? 0;
   card.querySelector(".transform-offset-y").value = job.transform_offset_y_mm ?? 0;
-  applyOffsetBoundsToCard(card, job.paper_w_mm, job.paper_h_mm);
+  applyOffsetBoundsToCard(card, job.paper_width_mm, job.paper_height_mm);
   card.querySelector(".speed-pendown").value = job.speed_pendown;
   card.querySelector(".speed-penup").value = job.speed_penup;
-  card.querySelector(".accel").value = job.accel;
+  card.querySelector(".accel").value = job.acceleration;
   card.querySelector(".pause-between-layers").checked = job.pause_between_layers;
   card.querySelector(".pause-after-job").checked = job.pause_after_job;
   card.querySelector(".delete-on-complete").checked = !!job.delete_on_complete;
-  card.querySelector(".optimize").checked = !!job.optimize;
-  card.querySelector(".optimize-linemerge").checked = job.optimize_linemerge !== false;
-  card.querySelector(".optimize-linesimplify").checked = job.optimize_linesimplify !== false;
-  card.querySelector(".optimize-linesort").checked = job.optimize_linesort !== false;
-  card.querySelector(".optimize-reloop").checked = job.optimize_reloop !== false;
-  card.querySelector(".optimize-tolerance").value = (job.optimize_tolerance_mm ?? 0.10).toFixed(2);
+  card.querySelector(".optimize").checked = !!job.optimize_svg;
+  card.querySelector(".optimize-linemerge").checked = job.optimize_svg_linemerge !== false;
+  card.querySelector(".optimize-linesimplify").checked = job.optimize_svg_linesimplify !== false;
+  card.querySelector(".optimize-linesort").checked = job.optimize_svg_linesort !== false;
+  card.querySelector(".optimize-reloop").checked = job.optimize_svg_reloop !== false;
+  card.querySelector(".optimize-tolerance").value = (job.optimize_svg_tolerance_mm ?? 0.10).toFixed(2);
   applyOptimizeEnabledStyle(card);
 
   // Clicking the card header toggles expansion; action buttons stop propagation.
@@ -416,10 +416,10 @@ function createCardForJob(job) {
   card.querySelectorAll(".job-actions button").forEach((b) =>
     b.addEventListener("click", (e) => e.stopPropagation())
   );
-  card.querySelector(".job-delete").addEventListener("click", () => deleteJob(job.id));
-  card.querySelector(".job-move-up").addEventListener("click", () => moveJob(job.id, -1));
-  card.querySelector(".job-move-down").addEventListener("click", () => moveJob(job.id, +1));
-  card.querySelector(".job-requeue").addEventListener("click", () => requeueJob(job.id));
+  card.querySelector(".job-delete").addEventListener("click", () => deleteJob(job.job_id));
+  card.querySelector(".job-move-up").addEventListener("click", () => moveJob(job.job_id, -1));
+  card.querySelector(".job-move-down").addEventListener("click", () => moveJob(job.job_id, +1));
+  card.querySelector(".job-requeue").addEventListener("click", () => requeueJob(job.job_id));
 
   // Settings changes
   const paperInputs = [
@@ -440,7 +440,7 @@ function createCardForJob(job) {
     });
   });
   card.querySelector(".fit-content").addEventListener("change", () => {
-    const ctx = cardCtx.get(job.id);
+    const ctx = cardCtx.get(job.job_id);
     if (ctx) ctx.fitLocked = true;
     queueCardUpdate(card);
   });
@@ -480,7 +480,7 @@ function createCardForJob(job) {
   ];
   transformInputs.forEach((el) => {
     el.addEventListener("input", () => {
-      const j = serverState.queue.find((x) => x.id === card.dataset.id);
+      const j = serverState.queue.find((x) => x.job_id === card.dataset.id);
       if (!j) return;
       updatePreviewTransform(card, { ...j, ...readTransformFromCard(card) });
     });
@@ -516,8 +516,8 @@ function createCardForJob(job) {
     });
   });
 
-  const ctx = cardCtx.get(job.id) || { svg: null, fitLocked: false };
-  cardCtx.set(job.id, ctx);
+  const ctx = cardCtx.get(job.job_id) || { svg: null, fitLocked: false };
+  cardCtx.set(job.job_id, ctx);
   if (!ctx.svg || !ctx.svg.text) {
     fetchSvgMeta(job.svg_id).then((meta) => {
       if (meta) {
@@ -532,8 +532,8 @@ function createCardForJob(job) {
   }
 
   // Auto-expand if this is the first card in the queue, or the currently-active job.
-  const isFirst = serverState.queue.length > 0 && serverState.queue[0].id === job.id;
-  if (isFirst || job.id === serverState.active_id) {
+  const isFirst = serverState.queue.length > 0 && serverState.queue[0].job_id === job.job_id;
+  if (isFirst || job.job_id === serverState.active_id) {
     card.classList.add("expanded");
     card.querySelector(".job-body").hidden = false;
   }
@@ -632,7 +632,7 @@ function toggleCardExpanded(card) {
   card.classList.toggle("expanded", !body.hidden);
   syncJobCardCaret(card);
   if (!body.hidden) {
-    const job = serverState.queue.find((j) => j.id === card.dataset.id);
+    const job = serverState.queue.find((j) => j.job_id === card.dataset.id);
     if (job) {
       // Body width was 0 while hidden — now that it's visible, re-measure.
       requestAnimationFrame(() => updatePreviewTransform(card, job));
@@ -643,7 +643,7 @@ function toggleCardExpanded(card) {
 // ───── Per-card updates ──────────────────────────────────────────────────
 
 function updateCard(card, job) {
-  const ctx = cardCtx.get(job.id) || {};
+  const ctx = cardCtx.get(job.job_id) || {};
 
   // Track status transitions so we can auto-collapse a card once the next job
   // becomes active. Only flag the transition *into* a terminal state so a card
@@ -682,21 +682,21 @@ function updateCard(card, job) {
   }
 
   // Disable editing when job is active
-  const activeBlocks = job.id === serverState.active_id &&
+  const activeBlocks = job.job_id === serverState.active_id &&
     !["queued", "completed", "failed", "cancelled"].includes(job.status);
-  card.classList.toggle("active", job.id === serverState.active_id);
+  card.classList.toggle("active", job.job_id === serverState.active_id);
   card.classList.toggle("readonly", activeBlocks);
   card.querySelectorAll(".col-form input, .col-form select, .col-form button")
     .forEach((el) => { el.disabled = activeBlocks; });
 
   // Auto-expand active card
-  if (job.id === serverState.active_id && card.querySelector(".job-body").hidden) {
+  if (job.job_id === serverState.active_id && card.querySelector(".job-body").hidden) {
     toggleCardExpanded(card);
   }
 
   // Auto-collapse a just-finished card once another job is active.
   if (ctx.finishedPendingCollapse &&
-      serverState.active_id && serverState.active_id !== job.id) {
+      serverState.active_id && serverState.active_id !== job.job_id) {
     const body = card.querySelector(".job-body");
     if (!body.hidden) {
       body.hidden = true;
@@ -716,7 +716,7 @@ function updateCard(card, job) {
     requeueBtn.hidden = !(isTerminal && job.started_at);
   }
 
-  cardCtx.set(job.id, ctx);
+  cardCtx.set(job.job_id, ctx);
 
   // Preview + layers + stages + plot-info
   if (ctx.svg) {
@@ -730,21 +730,21 @@ function updateCard(card, job) {
 function formatPaperLabel(job) {
   const u = effectiveDisplayUnit();
   if (job.paper_size_name) {
-    const w = formatLengthValue(job.paper_w_mm, u);
-    const h = formatLengthValue(job.paper_h_mm, u);
+    const w = formatLengthValue(job.paper_width_mm, u);
+    const h = formatLengthValue(job.paper_height_mm, u);
     return `${job.paper_size_name} (${w} × ${h} ${u})`;
   }
-  const { preset, orientation } = guessPresetFromDims(job.paper_w_mm, job.paper_h_mm);
+  const { preset, orientation } = guessPresetFromDims(job.paper_width_mm, job.paper_height_mm);
   if (preset === "Custom") {
-    const w = formatLengthValue(job.paper_w_mm, u);
-    const h = formatLengthValue(job.paper_h_mm, u);
+    const w = formatLengthValue(job.paper_width_mm, u);
+    const h = formatLengthValue(job.paper_height_mm, u);
     return `${w}×${h} ${u}`;
   }
   return `${preset} ${orientation}`;
 }
 
 function renderPreview(card, job) {
-  const ctx = cardCtx.get(job.id);
+  const ctx = cardCtx.get(job.job_id);
   if (!ctx || !ctx.svg) return;
   const previewEl = card.querySelector(".svg-preview");
   if (!previewEl.dataset.rendered) {
@@ -799,13 +799,13 @@ function syncOptimizeMaster(card) {
 }
 
 function resetOptimize(card) {
-  card.querySelector(".optimize").checked = !!appSettings.optimize_default;
-  card.querySelector(".optimize-linemerge").checked = !!appSettings.optimize_linemerge_default;
-  card.querySelector(".optimize-linesimplify").checked = !!appSettings.optimize_linesimplify_default;
-  card.querySelector(".optimize-linesort").checked = !!appSettings.optimize_linesort_default;
-  card.querySelector(".optimize-reloop").checked = !!appSettings.optimize_reloop_default;
+  card.querySelector(".optimize").checked = !!appSettings.optimize_svg_default;
+  card.querySelector(".optimize-linemerge").checked = !!appSettings.optimize_svg_linemerge_default;
+  card.querySelector(".optimize-linesimplify").checked = !!appSettings.optimize_svg_linesimplify_default;
+  card.querySelector(".optimize-linesort").checked = !!appSettings.optimize_svg_linesort_default;
+  card.querySelector(".optimize-reloop").checked = !!appSettings.optimize_svg_reloop_default;
   card.querySelector(".optimize-tolerance").value =
-    (appSettings.optimize_tolerance_default_mm ?? 0.10).toFixed(2);
+    (appSettings.optimize_svg_tolerance_default_mm ?? 0.10).toFixed(2);
   applyOptimizeEnabledStyle(card);
   queueCardUpdate(card);
 }
@@ -814,7 +814,7 @@ function resetParameters(card) {
   const pairs = [
     [".speed-pendown", appSettings.speed_pendown_default],
     [".speed-penup", appSettings.speed_penup_default],
-    [".accel", appSettings.accel_default],
+    [".accel", appSettings.acceleration_default],
   ];
   for (const [sel, val] of pairs) {
     const el = card.querySelector(sel);
@@ -893,10 +893,10 @@ function updatePreviewTransform(card, job) {
   const content = previewEl.querySelector(".paper-content");
   const margins = previewEl.querySelector(".paper-margins");
   if (!paper || !content) return;
-  const ctx = cardCtx.get(job.id);
+  const ctx = cardCtx.get(job.job_id);
   if (!ctx || !ctx.svg) return;
 
-  const w = job.paper_w_mm, h = job.paper_h_mm;
+  const w = job.paper_width_mm, h = job.paper_height_mm;
   if (w <= 0 || h <= 0) return;
   paper.style.aspectRatio = `${w} / ${h}`;
 
@@ -974,7 +974,7 @@ function syncPreviewLayers(card, job) {
 }
 
 function renderLayers(card, job) {
-  const ctx = cardCtx.get(job.id);
+  const ctx = cardCtx.get(job.job_id);
   if (!ctx || !ctx.svg) return;
   const ul = card.querySelector(".layers");
   // Layer entries carry their own metadata (label, type) plus an optional
@@ -1002,7 +1002,7 @@ function renderLayers(card, job) {
   // Attach change handler once
   if (!ul.dataset.wired) {
     ul.addEventListener("change", () => {
-      const cur = serverState.queue.find((j) => j.id === card.dataset.id);
+      const cur = serverState.queue.find((j) => j.job_id === card.dataset.id);
       const curOverrides = new Map((cur?.layer_selections || []).map((s) => [s.index, s]));
       const checkedIndices = new Set(
         Array.from(ul.querySelectorAll("input[type=checkbox]:checked"))
@@ -1070,16 +1070,16 @@ function renderPlotInfo(card, job) {
 }
 
 function onPaperChange(card) {
-  const job = serverState.queue.find((j) => j.id === card.dataset.id);
+  const job = serverState.queue.find((j) => j.job_id === card.dataset.id);
   if (!job) return;
-  const ctx = cardCtx.get(job.id);
+  const ctx = cardCtx.get(job.job_id);
   const preset = card.querySelector(".paper-size").value;
   card.querySelector(".custom-dims").hidden = preset !== "Custom";
   const { w, h, paper_size_name } = readPaperFromCard(card);
 
   const updates = {
-    paper_w_mm: w,
-    paper_h_mm: h,
+    paper_width_mm: w,
+    paper_height_mm: h,
     paper_size_name: paper_size_name,
     margin_top_mm: parseFloat(card.querySelector(".margin-top").value) || 0,
     margin_right_mm: parseFloat(card.querySelector(".margin-right").value) || 0,
@@ -1092,8 +1092,8 @@ function onPaperChange(card) {
 
   // Auto-fit if not user-locked and content exceeds available area
   if (!ctx?.fitLocked && ctx?.svg?.width_mm && ctx?.svg?.height_mm) {
-    const aW = updates.paper_w_mm - updates.margin_left_mm - updates.margin_right_mm;
-    const aH = updates.paper_h_mm - updates.margin_top_mm - updates.margin_bottom_mm;
+    const aW = updates.paper_width_mm - updates.margin_left_mm - updates.margin_right_mm;
+    const aH = updates.paper_height_mm - updates.margin_top_mm - updates.margin_bottom_mm;
     if (ctx.svg.width_mm > aW || ctx.svg.height_mm > aH) {
       card.querySelector(".fit-content").checked = true;
     }
@@ -1120,7 +1120,7 @@ function queueCardUpdate(card, immediateUpdates = null) {
 }
 
 async function sendCardUpdate(card, immediateUpdates) {
-  const job = serverState.queue.find((j) => j.id === card.dataset.id);
+  const job = serverState.queue.find((j) => j.job_id === card.dataset.id);
   if (!job) return;
   // A PATCH on a non-queued job re-queues it server-side. Hide the requeue
   // button immediately so the user doesn't see a stale "Plot again" ↻ between
@@ -1130,8 +1130,8 @@ async function sendCardUpdate(card, immediateUpdates) {
   const updates = immediateUpdates || {};
   if (!immediateUpdates) {
     const { w, h, paper_size_name } = readPaperFromCard(card);
-    updates.paper_w_mm = w;
-    updates.paper_h_mm = h;
+    updates.paper_width_mm = w;
+    updates.paper_height_mm = h;
     updates.paper_size_name = paper_size_name;
     updates.margin_top_mm = parseFloat(card.querySelector(".margin-top").value) || 0;
     updates.margin_right_mm = parseFloat(card.querySelector(".margin-right").value) || 0;
@@ -1141,17 +1141,17 @@ async function sendCardUpdate(card, immediateUpdates) {
     Object.assign(updates, readTransformFromCard(card));
     updates.speed_pendown = parseInt(card.querySelector(".speed-pendown").value);
     updates.speed_penup = parseInt(card.querySelector(".speed-penup").value);
-    updates.accel = parseInt(card.querySelector(".accel").value);
+    updates.acceleration = parseInt(card.querySelector(".accel").value);
     updates.pause_between_layers = card.querySelector(".pause-between-layers").checked;
     updates.pause_after_job = card.querySelector(".pause-after-job").checked;
     updates.delete_on_complete = card.querySelector(".delete-on-complete").checked;
-    updates.optimize = card.querySelector(".optimize").checked;
-    updates.optimize_linemerge = card.querySelector(".optimize-linemerge").checked;
-    updates.optimize_linesimplify = card.querySelector(".optimize-linesimplify").checked;
-    updates.optimize_linesort = card.querySelector(".optimize-linesort").checked;
-    updates.optimize_reloop = card.querySelector(".optimize-reloop").checked;
+    updates.optimize_svg = card.querySelector(".optimize").checked;
+    updates.optimize_svg_linemerge = card.querySelector(".optimize-linemerge").checked;
+    updates.optimize_svg_linesimplify = card.querySelector(".optimize-linesimplify").checked;
+    updates.optimize_svg_linesort = card.querySelector(".optimize-linesort").checked;
+    updates.optimize_svg_reloop = card.querySelector(".optimize-reloop").checked;
     const tol = parseFloat(card.querySelector(".optimize-tolerance").value);
-    if (isFinite(tol) && tol > 0) updates.optimize_tolerance_mm = tol;
+    if (isFinite(tol) && tol > 0) updates.optimize_svg_tolerance_mm = tol;
   }
   try {
     await fetch(`/jobs/${card.dataset.id}`, {
@@ -1163,7 +1163,7 @@ async function sendCardUpdate(card, immediateUpdates) {
     console.error("update failed", e);
   }
   // Refresh visuals locally right away (server will broadcast soon too)
-  if (updates.paper_w_mm) updatePreviewTransform(card, { ...job, ...updates });
+  if (updates.paper_width_mm) updatePreviewTransform(card, { ...job, ...updates });
 }
 
 async function deleteJob(id) {
@@ -1185,7 +1185,7 @@ async function requeueJob(id) {
 }
 
 async function moveJob(id, delta) {
-  const idx = serverState.queue.findIndex((j) => j.id === id);
+  const idx = serverState.queue.findIndex((j) => j.job_id === id);
   if (idx < 0) return;
   const newIndex = Math.max(0, Math.min(serverState.queue.length - 1, idx + delta));
   if (newIndex === idx) return;
@@ -1216,7 +1216,7 @@ async function postAction(path) {
 
 function applyTopControls() {
   const s = serverState;
-  const active = s.active_id ? s.queue.find((j) => j.id === s.active_id) : null;
+  const active = s.active_id ? s.queue.find((j) => j.job_id === s.active_id) : null;
   const status = active ? active.status : "idle";
 
   plotBtn.hidden = !!active || s.awaiting_next_job || !s.queue.some((j) => j.status === "queued");
@@ -1354,13 +1354,13 @@ function applyAppSettings(data) {
     delete_on_complete_default: data.delete_on_complete_default ?? appSettings.delete_on_complete_default,
     speed_pendown_default: data.speed_pendown_default ?? appSettings.speed_pendown_default,
     speed_penup_default: data.speed_penup_default ?? appSettings.speed_penup_default,
-    accel_default: data.accel_default ?? appSettings.accel_default,
-    optimize_default: data.optimize_default ?? appSettings.optimize_default,
-    optimize_tolerance_default_mm: data.optimize_tolerance_default_mm ?? appSettings.optimize_tolerance_default_mm,
-    optimize_linemerge_default: data.optimize_linemerge_default ?? appSettings.optimize_linemerge_default,
-    optimize_linesimplify_default: data.optimize_linesimplify_default ?? appSettings.optimize_linesimplify_default,
-    optimize_linesort_default: data.optimize_linesort_default ?? appSettings.optimize_linesort_default,
-    optimize_reloop_default: data.optimize_reloop_default ?? appSettings.optimize_reloop_default,
+    acceleration_default: data.acceleration_default ?? appSettings.acceleration_default,
+    optimize_svg_default: data.optimize_svg_default ?? appSettings.optimize_svg_default,
+    optimize_svg_tolerance_default_mm: data.optimize_svg_tolerance_default_mm ?? appSettings.optimize_svg_tolerance_default_mm,
+    optimize_svg_linemerge_default: data.optimize_svg_linemerge_default ?? appSettings.optimize_svg_linemerge_default,
+    optimize_svg_linesimplify_default: data.optimize_svg_linesimplify_default ?? appSettings.optimize_svg_linesimplify_default,
+    optimize_svg_linesort_default: data.optimize_svg_linesort_default ?? appSettings.optimize_svg_linesort_default,
+    optimize_svg_reloop_default: data.optimize_svg_reloop_default ?? appSettings.optimize_svg_reloop_default,
     display_unit: data.display_unit ?? appSettings.display_unit,
   };
   if (effectiveDisplayUnit() !== prevUnit) refreshUnitDependentDisplays();
@@ -1369,7 +1369,7 @@ function applyAppSettings(data) {
 function refreshUnitDependentDisplays() {
   cardEls.forEach((card, id) => {
     relabelPaperOptions(card.querySelector(".paper-size"));
-    const job = serverState.queue.find((j) => j.id === id);
+    const job = serverState.queue.find((j) => j.job_id === id);
     if (job) updateCard(card, job);
   });
 }
@@ -1394,13 +1394,13 @@ async function openSettings() {
     settingsDeleteOnComplete.checked = data.delete_on_complete_default ?? false;
     settingsSpeedPendown.value = String(data.speed_pendown_default ?? 25);
     settingsSpeedPenup.value = String(data.speed_penup_default ?? 75);
-    settingsAccel.value = String(data.accel_default ?? 75);
-    settingsOptimize.checked = !!(data.optimize_default ?? false);
-    settingsOptimizeLinemerge.checked = data.optimize_linemerge_default !== false;
-    settingsOptimizeLinesimplify.checked = data.optimize_linesimplify_default !== false;
-    settingsOptimizeLinesort.checked = data.optimize_linesort_default !== false;
-    settingsOptimizeReloop.checked = data.optimize_reloop_default !== false;
-    settingsOptimizeTolerance.value = (data.optimize_tolerance_default_mm ?? 0.10).toFixed(2);
+    settingsAccel.value = String(data.acceleration_default ?? 75);
+    settingsOptimize.checked = !!(data.optimize_svg_default ?? false);
+    settingsOptimizeLinemerge.checked = data.optimize_svg_linemerge_default !== false;
+    settingsOptimizeLinesimplify.checked = data.optimize_svg_linesimplify_default !== false;
+    settingsOptimizeLinesort.checked = data.optimize_svg_linesort_default !== false;
+    settingsOptimizeReloop.checked = data.optimize_svg_reloop_default !== false;
+    settingsOptimizeTolerance.value = (data.optimize_svg_tolerance_default_mm ?? 0.10).toFixed(2);
     settingsDisplayUnit.value = data.display_unit || effectiveDisplayUnit();
     applySettingsOptimizeEnabledStyle();
     for (const sel of ["#settings-speed-pendown-slider", "#settings-speed-penup-slider", "#settings-accel-slider"]) {
@@ -1422,13 +1422,13 @@ async function saveSettings() {
       delete_on_complete_default: settingsDeleteOnComplete.checked,
       speed_pendown_default: parseInt(settingsSpeedPendown.value),
       speed_penup_default: parseInt(settingsSpeedPenup.value),
-      accel_default: parseInt(settingsAccel.value),
-      optimize_default: settingsOptimize.checked,
-      optimize_tolerance_default_mm: isFinite(tol) && tol > 0 ? tol : 0.10,
-      optimize_linemerge_default: settingsOptimizeLinemerge.checked,
-      optimize_linesimplify_default: settingsOptimizeLinesimplify.checked,
-      optimize_linesort_default: settingsOptimizeLinesort.checked,
-      optimize_reloop_default: settingsOptimizeReloop.checked,
+      acceleration_default: parseInt(settingsAccel.value),
+      optimize_svg_default: settingsOptimize.checked,
+      optimize_svg_tolerance_default_mm: isFinite(tol) && tol > 0 ? tol : 0.10,
+      optimize_svg_linemerge_default: settingsOptimizeLinemerge.checked,
+      optimize_svg_linesimplify_default: settingsOptimizeLinesimplify.checked,
+      optimize_svg_linesort_default: settingsOptimizeLinesort.checked,
+      optimize_svg_reloop_default: settingsOptimizeReloop.checked,
       display_unit: settingsDisplayUnit.value,
     };
     const res = await fetch("/settings", {
@@ -1591,11 +1591,11 @@ function updatePenCursor(msg) {
   const active = serverState.active_id ? cardEls.get(serverState.active_id) : null;
   if (!active) return;
   const cursor = active.querySelector(".pen-cursor");
-  const job = serverState.queue.find((j) => j.id === serverState.active_id);
+  const job = serverState.queue.find((j) => j.job_id === serverState.active_id);
   if (!cursor || !job) return;
   cursor.hidden = false;
-  cursor.style.left = `${(msg.x_mm / job.paper_w_mm) * 100}%`;
-  cursor.style.top = `${(msg.y_mm / job.paper_h_mm) * 100}%`;
+  cursor.style.left = `${(msg.x_mm / job.paper_width_mm) * 100}%`;
+  cursor.style.top = `${(msg.y_mm / job.paper_height_mm) * 100}%`;
   cursor.classList.toggle("pen-down", !!msg.pen_down);
 }
 
@@ -1614,7 +1614,7 @@ function connectWs() {
       serverState = msg;
       renderQueue();
       applyTopControls();
-      if (!serverState.active_id || (serverState.queue.find((j) => j.id === serverState.active_id)?.status !== "plotting")) {
+      if (!serverState.active_id || (serverState.queue.find((j) => j.job_id === serverState.active_id)?.status !== "plotting")) {
         hideAllPenCursors();
       }
     } else if (msg.type === "position") {
@@ -1639,7 +1639,7 @@ async function loadAppVersion() {
 
 window.addEventListener("resize", () => {
   cardEls.forEach((card, id) => {
-    const job = serverState.queue.find((j) => j.id === id);
+    const job = serverState.queue.find((j) => j.job_id === id);
     if (job) updatePreviewTransform(card, job);
   });
 });
