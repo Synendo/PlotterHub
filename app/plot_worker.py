@@ -37,6 +37,7 @@ _current_ad: axidraw.AxiDraw | None = None
 _preview_proc: subprocess.Popen | None = None
 _cancel_flag = threading.Event()           # cancel the active job
 _continue_event = threading.Event()        # continue: pen change within a job, or next job
+_calibrate_event = threading.Event()       # set alongside _continue_event to request a calibration plot from the awaiting_pen_change pause
 _worker_thread: threading.Thread | None = None
 _worker_lock = threading.Lock()
 
@@ -313,6 +314,23 @@ def continue_next() -> None:
     raise RuntimeError("Nothing to continue")
 
 
+def trigger_calibration() -> None:
+    """Run a one-shot plot of every layer with type='calibration', then return
+    to the awaiting_pen_change pause. Only valid while the active job is
+    paused at a pen change AND has at least one calibration layer."""
+    job = state.active_job()
+    if job is None or job["status"] != "awaiting_pen_change":
+        raise RuntimeError("Calibration plot only available at a pen-change pause")
+    has_cal = any(s.get("type") == "calibration"
+                  for s in (job.get("layer_selections") or []))
+    if not has_cal:
+        raise RuntimeError("This job has no calibration layers")
+    # Set _calibrate_event first; the wait loop checks it after waking on
+    # _continue_event, so order matters.
+    _calibrate_event.set()
+    _continue_event.set()
+
+
 def cancel_active() -> None:
     snap = state.snapshot()
     if snap["awaiting_next_job"]:
@@ -333,6 +351,11 @@ def cancel_active() -> None:
 
     st = job["status"]
     if st == "plotting":
+        _cancel_flag.set()
+        pause_active()
+    elif st == "plotting_calibration":
+        # Same shape as plotting: stop the AxiDraw mid-stroke; the calibration
+        # phase sees _cancel_flag and homes via res_home before bailing.
         _cancel_flag.set()
         pause_active()
     elif st == "planning":
@@ -515,6 +538,77 @@ def _run_optimize_phase(job_id: str, src_path: Path, stages: list) -> Path | Non
 
     state.update_job(job_id, optimized_with_key=cache_key)
     return opt_path
+
+
+def _run_calibration_phase(job_id: str, svg_path: Path) -> None:
+    """Plot every type='calibration' layer of the job, regardless of the
+    `selected` flag. Runs as a self-contained side plot from inside the
+    awaiting_pen_change pause: no resume tracking, no stage advancement.
+
+    Honours _cancel_flag — if the user hits cancel during the calibration
+    plot, the AxiDraw is paused, we home with res_home, and return. The
+    caller (the pause-wait loop in _run_staged_loop) then sees _cancel_flag
+    and finalises the main job as cancelled.
+    """
+    job = state.get_job(job_id)
+    if job is None:
+        return
+    cal_indices = [
+        s["index"] for s in (job.get("layer_selections") or [])
+        if s.get("type") == "calibration"
+    ]
+    if not cal_indices:
+        return  # endpoint should have rejected — defensive
+
+    state.update_job(job_id,
+                     status="plotting_calibration",
+                     plotting_started_at=time.time())
+
+    filt = svg_path.with_name(f"{job['svg_id']}.cal.filt.svg")
+    cal_svg = svg_path.with_name(f"{job['svg_id']}.cal.svg")
+
+    output_svg = ""
+    stopped = STOPPED_COMPLETED
+    try:
+        svg_utils.filter_to_layers(svg_path, cal_indices, filt)
+        svg_utils.transform_to_paper(
+            filt, cal_svg,
+            job["paper_width_mm"], job["paper_height_mm"],
+            job["margin_top_mm"], job["margin_right_mm"],
+            job["margin_bottom_mm"], job["margin_left_mm"],
+            job["fit_content"],
+            transform_scale=job.get("transform_scale", 1.0),
+            transform_rotation_deg=job.get("transform_rotation_deg", 0.0),
+            transform_offset_x_mm=job.get("transform_offset_x_mm", 0.0),
+            transform_offset_y_mm=job.get("transform_offset_y_mm", 0.0),
+        )
+        stopped, output_svg = _run_stage(cal_svg, "plot", job)
+    except IndexError:
+        log.warning("plotink IndexError during calibration plot")
+        return
+    except Exception:
+        log.exception("calibration plot setup failed")
+        return
+
+    if stopped in _PAUSED_CODES and _cancel_flag.is_set():
+        # User cancelled mid-calibration. Home from where we stopped, then
+        # leave _cancel_flag set so the caller cancels the main job.
+        resume_path = svg_path.with_name(f"{job['svg_id']}.cal.resume.svg")
+        try:
+            resume_path.write_text(output_svg, encoding="utf-8")
+            _run_stage(resume_path, "res_home", job)
+        except Exception:
+            log.exception("calibration cancel: res_home failed")
+        try:
+            resume_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return
+
+    if stopped != STOPPED_COMPLETED:
+        # Treat anything other than success/cancel as an unhelpful warning —
+        # the user is right there, can re-run calibration or continue.
+        log.warning("calibration plot ended with stopped=%s", stopped)
 
 
 def _resume_job(job_id: str) -> None:
@@ -715,12 +809,27 @@ def _run_staged_loop(job_id: str, svg_path: Path, first_mode: str) -> None:
         if next_i < len(new_stages):
             if job.get("pause_between_layers", True) and len(new_stages) > 1:
                 state.update_job(job_id, status="awaiting_pen_change")
-                _continue_event.wait()
-                _continue_event.clear()
-                if _cancel_flag.is_set():
-                    _cancel_flag.clear()
-                    state.update_job(job_id, status="cancelled")
-                    return
+                while True:
+                    _continue_event.wait()
+                    _continue_event.clear()
+                    if _cancel_flag.is_set():
+                        _cancel_flag.clear()
+                        state.update_job(job_id, status="cancelled")
+                        return
+                    if _calibrate_event.is_set():
+                        _calibrate_event.clear()
+                        _run_calibration_phase(job_id, svg_path)
+                        if _cancel_flag.is_set():
+                            _cancel_flag.clear()
+                            state.update_job(job_id, status="cancelled",
+                                             resume_path=None)
+                            return
+                        # Back to the pause point; loop and wait for the next
+                        # continue / calibrate / cancel.
+                        state.update_job(job_id, status="awaiting_pen_change")
+                        continue
+                    # Plain continue → break out and run the next stage.
+                    break
             mode = "plot"
             continue
         # No more stages

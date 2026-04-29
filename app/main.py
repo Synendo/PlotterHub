@@ -524,6 +524,15 @@ def api_queue_cancel():
     return {"ok": True}
 
 
+@app.post("/api/v1/queue/calibrate", dependencies=[Depends(require_api_key)])
+def api_queue_calibrate():
+    try:
+        plot_worker.trigger_calibration()
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    return {"ok": True}
+
+
 # Per-job CRUD (public) ----------------------------------------------------
 # Thin auth-gated wrappers around the internal handlers above.
 
@@ -652,6 +661,15 @@ def continue_queue():
 def cancel_queue():
     try:
         plot_worker.cancel_active()
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    return {"ok": True}
+
+
+@app.post("/queue/calibrate")
+def calibrate_queue():
+    try:
+        plot_worker.trigger_calibration()
     except RuntimeError as e:
         raise HTTPException(409, str(e))
     return {"ok": True}

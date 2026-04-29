@@ -12,6 +12,7 @@ const plotBtn = $("plot-btn");
 const pauseBtn = $("pause-btn");
 const resumeBtn = $("resume-btn");
 const continueBtn = $("continue-btn");
+const calibrateBtn = $("calibrate-btn");
 const cancelBtn = $("cancel-btn");
 const jobCardTemplate = $("job-card-template");
 const queueProgress = $("queue-progress");
@@ -22,6 +23,7 @@ const STATUS_LABELS = {
   optimizing: "Optimizing",
   planning: "Planning",
   plotting: "Plotting",
+  plotting_calibration: "Plotting calibration",
   paused: "Paused",
   awaiting_pen_change: "Awaiting pen change",
   awaiting_next_job: "Awaiting next job",
@@ -1238,6 +1240,7 @@ plotBtn.addEventListener("click", () => postAction("/queue/start"));
 pauseBtn.addEventListener("click", () => postAction("/queue/pause"));
 resumeBtn.addEventListener("click", () => postAction("/queue/resume"));
 continueBtn.addEventListener("click", () => postAction("/queue/continue"));
+calibrateBtn.addEventListener("click", () => postAction("/queue/calibrate"));
 cancelBtn.addEventListener("click", () => postAction("/queue/cancel"));
 
 async function postAction(path) {
@@ -1259,6 +1262,15 @@ function applyTopControls() {
   pauseBtn.hidden = !active || status !== "plotting";
   resumeBtn.hidden = !active || status !== "paused";
   continueBtn.hidden = !(s.awaiting_next_job || (active && status === "awaiting_pen_change"));
+  // Calibration button: visible only at a pen-change pause when this job has
+  // at least one type='calibration' layer. Label switches singular/plural.
+  const calLayers = active && status === "awaiting_pen_change"
+    ? (active.layer_selections || []).filter((l) => l.type === "calibration")
+    : [];
+  calibrateBtn.hidden = calLayers.length === 0;
+  calibrateBtn.textContent = calLayers.length > 1
+    ? "Plot Calibration Layers"
+    : "Plot Calibration Layer";
   cancelBtn.hidden = !active && !s.awaiting_next_job;
 
   // Top status pill text

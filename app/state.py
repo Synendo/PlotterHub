@@ -16,6 +16,9 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 # Jobs that were mid-run when the service died need normalization on load.
 # With a valid resume_path on disk the worker's existing res_plot flow can
 # continue them; otherwise we can't recover position so they become failed.
+# `plotting_calibration` is handled separately — it has no checkpoint, but
+# falling back to awaiting_pen_change is harmless (user re-runs calibration
+# if they want), so we don't lump it in here.
 _IN_FLIGHT_STATUSES = {"optimizing", "planning", "plotting", "homing", "awaiting_pen_change"}
 
 # Permitted job-status transitions, validated centrally in update_job /
@@ -23,17 +26,18 @@ _IN_FLIGHT_STATUSES = {"optimizing", "planning", "plotting", "homing", "awaiting
 # as is the startup rehydrate code in _load_from_disk — that path normalises
 # orphaned in-flight statuses by direct mutation, not as a real transition.
 _VALID_TRANSITIONS: dict[str, set[str]] = {
-    "queued":              {"optimizing", "planning"},
-    "optimizing":          {"planning", "cancelled", "failed"},
-    "planning":            {"plotting", "cancelled"},
-    "plotting":            {"paused", "homing", "awaiting_pen_change",
-                            "completed", "failed"},
-    "paused":              {"plotting", "homing", "cancelled"},
-    "awaiting_pen_change": {"plotting", "cancelled"},
-    "homing":              {"cancelled"},
-    "completed":           {"queued"},
-    "failed":              {"queued"},
-    "cancelled":           {"queued"},
+    "queued":               {"optimizing", "planning"},
+    "optimizing":           {"planning", "cancelled", "failed"},
+    "planning":             {"plotting", "cancelled"},
+    "plotting":             {"paused", "homing", "awaiting_pen_change",
+                             "completed", "failed"},
+    "paused":               {"plotting", "homing", "cancelled"},
+    "awaiting_pen_change":  {"plotting", "plotting_calibration", "cancelled"},
+    "plotting_calibration": {"awaiting_pen_change", "cancelled", "failed"},
+    "homing":               {"cancelled"},
+    "completed":            {"queued"},
+    "failed":               {"queued"},
+    "cancelled":            {"queued"},
 }
 
 
@@ -99,6 +103,13 @@ def _load_from_disk() -> None:
         if status == "awaiting_pen_change":
             # Clean checkpoint between stages: no resume SVG needed — the next
             # stage will be filtered/rendered from current_stage_index fresh.
+            job["status"] = "paused"
+            job["resume_path"] = None
+        elif status == "plotting_calibration":
+            # Calibration has no resume SVG. Treat it like an awaiting_pen_change
+            # rehydrate (which has the same shape — clean stage boundary, pen
+            # somewhere unknown): mark paused, user resumes, next stage is
+            # re-rendered from current_stage_index fresh.
             job["status"] = "paused"
             job["resume_path"] = None
         elif status in _IN_FLIGHT_STATUSES:

@@ -187,17 +187,24 @@ All five endpoints take no body, return `{"ok": true}` on success, and respond `
 | `POST` | `/api/v1/queue/pause` | Pause the active plot. Pen is raised; resumable. | No actively-plotting job. |
 | `POST` | `/api/v1/queue/resume` | Resume a paused plot. | No paused job; missing resume data. |
 | `POST` | `/api/v1/queue/continue` | Advance past a pen-change pause, or accept the next job after `awaiting_next_job`. | Nothing waiting on a continue. |
+| `POST` | `/api/v1/queue/calibrate` | At a pen-change pause, plot every layer with `type: "calibration"` (regardless of `selected`) as a one-shot side plot, then return to `awaiting_pen_change`. Lets the user verify pen alignment between layers without advancing the main plot. | Active job is not in `awaiting_pen_change`; job has no calibration-typed layers. |
 | `POST` | `/api/v1/queue/cancel` | Cancel the active job (or the awaiting-next-job state). The plotter homes if it can. | No active job. |
 
 #### Lifecycle cheat sheet
 
 ```
 queued ──plot──► [optimizing] ──► planning ──► plotting ──pause──► paused ──resume──► plotting
-                                                                                         │
-                                                                                ──continue──► (next stage / next job)
+                                                  │                                       │
+                                                  └──► awaiting_pen_change ──continue──► (next stage / next job)
+                                                              │  ▲                       │
+                                                              │  └── calibrate ◄──┐      │
+                                                              ▼                   │      │
+                                                        plotting_calibration ─────┘      │
                                                                                          │
                                                                                 ──cancel──► homing ──► cancelled
 ```
+
+`plotting_calibration` is entered from `awaiting_pen_change` via `/queue/calibrate`. It's a self-contained side plot of the calibration-typed layers; on completion the worker returns to `awaiting_pen_change` and the user can calibrate again, continue, or cancel.
 
 `optimizing` is only entered when the job has `optimize: true` AND its cached
 optimized SVG either doesn't exist or was produced with different parameters.
