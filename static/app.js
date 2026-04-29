@@ -369,6 +369,24 @@ function createCardForJob(job) {
   const card = frag.querySelector(".job-card");
   card.dataset.id = job.job_id;
 
+  // Clamp typed-in number values when the user leaves the field. We hook
+  // both `focusout` (fires on blur, before change) and `change` in capture
+  // phase (covers the Enter-key path that may not blur). After clamping,
+  // dispatch input + change so the paired slider re-syncs and queueCardUpdate
+  // sees the corrected value. Clamping during typing would mangle
+  // partially-entered numbers like "1100" → "110", so we only do it on commit.
+  const clampOnLeave = (e) => {
+    const el = e.target;
+    if (el instanceof HTMLInputElement && el.type === "number") {
+      if (clampNumberInput(el)) {
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
+  };
+  card.addEventListener("focusout", clampOnLeave);
+  card.addEventListener("change", clampOnLeave, true);
+
   // Populate paper-size options & defaults from job data
   const paperSize = card.querySelector(".paper-size");
   const namedInjected = injectNamedCustomOption(paperSize, job);
@@ -820,6 +838,24 @@ function resetParameters(card) {
     const el = card.querySelector(sel);
     if (el) { el.value = val; dispatchValueChange(el); }
   }
+}
+
+// Clamp a number input's value to its own min/max attributes. type="number"
+// only enforces the bounds via form validation, so a user can still type 200
+// into a 1–110 field — this snaps it back on blur/enter. Returns true if the
+// value was changed.
+function clampNumberInput(el) {
+  if (!el || el.type !== "number" || el.value === "") return false;
+  const v = parseFloat(el.value);
+  if (!isFinite(v)) return false;
+  const min = el.min !== "" ? parseFloat(el.min) : -Infinity;
+  const max = el.max !== "" ? parseFloat(el.max) : Infinity;
+  const c = Math.max(min, Math.min(max, v));
+  if (c !== v) {
+    el.value = String(c);
+    return true;
+  }
+  return false;
 }
 
 function updateSliderProgress(slider) {
@@ -1336,6 +1372,20 @@ const settingsDisplayUnit = $("settings-display-unit");
 settingsBtn.addEventListener("click", openSettings);
 $("settings-cancel").addEventListener("click", () => { settingsModal.hidden = true; });
 settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) settingsModal.hidden = true; });
+{
+  const clampOnLeaveSettings = (e) => {
+    const el = e.target;
+    if (el instanceof HTMLInputElement && el.type === "number") {
+      if (clampNumberInput(el)) {
+        // Settings sliders are wired to react to "input" — fire it so the
+        // slider thumb snaps to the corrected value too.
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
+  };
+  settingsModal.addEventListener("focusout", clampOnLeaveSettings);
+  settingsModal.addEventListener("change", clampOnLeaveSettings, true);
+}
 $("settings-save").addEventListener("click", saveSettings);
 settingsApiKeyCopy.addEventListener("click", async () => {
   if (!settingsApiKey.value) return;

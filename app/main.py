@@ -97,7 +97,7 @@ def get_svg(svg_id: str):
 
 class _OptimizeCreateFields(BaseModel):
     optimize_svg: bool = False
-    optimize_svg_tolerance_mm: float = Field(0.10, ge=0.01, le=10.0)
+    optimize_svg_tolerance_mm: float = 0.10
     optimize_svg_linemerge: bool = True
     optimize_svg_linesimplify: bool = True
     optimize_svg_linesort: bool = True
@@ -106,7 +106,7 @@ class _OptimizeCreateFields(BaseModel):
 
 class _OptimizeOptionalFields(BaseModel):
     optimize_svg: bool | None = None
-    optimize_svg_tolerance_mm: float | None = Field(None, ge=0.01, le=10.0)
+    optimize_svg_tolerance_mm: float | None = None
     optimize_svg_linemerge: bool | None = None
     optimize_svg_linesimplify: bool | None = None
     optimize_svg_linesort: bool | None = None
@@ -129,8 +129,8 @@ class JobCreate(_OptimizeCreateFields):
     margin_bottom_mm: float = 0.0
     margin_left_mm: float = 0.0
     fit_content: bool = False
-    transform_scale: float = Field(1.0, ge=0.01, le=5.0)
-    transform_rotation_deg: float = Field(0.0, ge=0.0, le=360.0)
+    transform_scale: float = 1.0
+    transform_rotation_deg: float = 0.0
     transform_offset_x_mm: float = 0.0
     transform_offset_y_mm: float = 0.0
     speed_pendown: int = 25
@@ -159,6 +159,46 @@ class SettingsUpdate(BaseModel):
     display_unit: Literal["mm", "cm", "in"] | None = None
 
 
+# Numeric job fields that get clamped on create/update. Out-of-range values
+# are silently corrected to the nearest bound rather than 400'd — a slider
+# overshoot or stale client default shouldn't break the request, the user
+# clearly wanted the value at the limit.
+_CLAMP_RANGES: dict[str, tuple[float, float]] = {
+    "speed_pendown": (1, 110),
+    "speed_penup": (1, 110),
+    "acceleration": (1, 100),
+    "transform_scale": (0.01, 5.0),
+    "transform_rotation_deg": (0.0, 360.0),
+    "optimize_svg_tolerance_mm": (0.01, 10.0),
+}
+
+
+def _clamp_job_fields(d: dict,
+                      paper_width_mm: float | None = None,
+                      paper_height_mm: float | None = None) -> None:
+    """In-place clamp of numeric job fields. ``paper_*_mm`` (when known)
+    bounds the transform offsets to the paper extent."""
+    for key, (lo, hi) in _CLAMP_RANGES.items():
+        v = d.get(key)
+        if v is not None:
+            d[key] = max(lo, min(hi, v))
+    for k in ("margin_top_mm", "margin_right_mm",
+              "margin_bottom_mm", "margin_left_mm"):
+        v = d.get(k)
+        if v is not None:
+            d[k] = max(0.0, v)
+    if paper_width_mm:
+        v = d.get("transform_offset_x_mm")
+        if v is not None:
+            d["transform_offset_x_mm"] = max(-paper_width_mm,
+                                             min(paper_width_mm, v))
+    if paper_height_mm:
+        v = d.get("transform_offset_y_mm")
+        if v is not None:
+            d["transform_offset_y_mm"] = max(-paper_height_mm,
+                                             min(paper_height_mm, v))
+
+
 class JobUpdate(_OptimizeOptionalFields):
     layer_selections: list[dict] | None = None
     name: str | None = None
@@ -173,8 +213,8 @@ class JobUpdate(_OptimizeOptionalFields):
     margin_bottom_mm: float | None = None
     margin_left_mm: float | None = None
     fit_content: bool | None = None
-    transform_scale: float | None = Field(None, ge=0.01, le=5.0)
-    transform_rotation_deg: float | None = Field(None, ge=0.0, le=360.0)
+    transform_scale: float | None = None
+    transform_rotation_deg: float | None = None
     transform_offset_x_mm: float | None = None
     transform_offset_y_mm: float | None = None
     speed_pendown: int | None = None
@@ -189,8 +229,10 @@ def create_job(req: JobCreate):
         raise HTTPException(404, "svg not found")
     if not any(s.get("selected", True) for s in (req.layer_selections or [])):
         raise HTTPException(400, "select at least one layer")
-    job = state.add_job(req.model_dump())
-    return job
+    payload = req.model_dump()
+    _clamp_job_fields(payload, payload.get("paper_width_mm"),
+                      payload.get("paper_height_mm"))
+    return state.add_job(payload)
 
 
 @app.get("/jobs")
@@ -216,6 +258,11 @@ def update_job(job_id: str, req: JobUpdate):
     # exclude_unset so the client distinguishes "not sent" from "explicitly null"
     # — needed e.g. for paper_size_name which can be cleared back to None.
     updates = req.model_dump(exclude_unset=True)
+    # Use the new paper dims if they're being changed; otherwise fall back to
+    # the existing job's so transform offsets clamp against the right extent.
+    paper_w = updates.get("paper_width_mm", j.get("paper_width_mm"))
+    paper_h = updates.get("paper_height_mm", j.get("paper_height_mm"))
+    _clamp_job_fields(updates, paper_w, paper_h)
     # Re-queue on edit so user can re-plot a finished/cancelled job without extra steps
     if j["status"] != "queued":
         updates["status"] = "queued"
@@ -284,9 +331,9 @@ class ApiJobMetadata(_OptimizeOptionalFields):
     pause_between_layers: bool | None = None
     pause_after_job: bool | None = None
     delete_on_complete: bool | None = None
-    speed_pendown: int | None = Field(default=None, ge=1, le=110)
-    speed_penup: int | None = Field(default=None, ge=1, le=110)
-    acceleration: int | None = Field(default=None, ge=1, le=100)
+    speed_pendown: int | None = None
+    speed_penup: int | None = None
+    acceleration: int | None = None
     # Request-only directive: when true AND the queue is empty at the moment of
     # the POST, kick off the worker so this job plots immediately. Not stored
     # on the job record.
@@ -410,6 +457,7 @@ async def api_create_job(file: UploadFile = File(...),
         "optimize_svg_linesort": pick(meta.optimize_svg_linesort, config.OPTIMIZE_SVG_LINESORT_DEFAULT),
         "optimize_svg_reloop": pick(meta.optimize_svg_reloop, config.OPTIMIZE_SVG_RELOOP_DEFAULT),
     }
+    _clamp_job_fields(job_payload, paper_width_mm, paper_height_mm)
     # auto_plot: only kick the worker if no other job is in a runnable or
     # in-progress state (queued / paused / plotting / planning / optimizing /
     # homing / awaiting_pen_change). Terminal-state leftovers (completed /

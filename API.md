@@ -80,7 +80,8 @@ All fields are optional. Unspecified booleans, speeds, and `selected` flags fall
   // you'd need to wait for it to finish or hit `/queue/plot` yourself.
   "auto_plot": false,                 // Default false.
 
-  // Plotter speed — omit any field to inherit the server default. Out-of-range values return 400.
+  // Plotter speed — omit any field to inherit the server default.
+  // Out-of-range values are silently clamped to the bounds.
   "speed_pendown": 30,                // 1–110
   "speed_penup":   80,                // 1–110
   "acceleration":  50,                // 1–100
@@ -234,6 +235,8 @@ Returns the full job record (same shape as the `POST /api/v1/jobs` response).
 #### `PATCH /api/v1/jobs/{job_id}` — edit
 
 Body is JSON. All fields optional; only the fields you send are applied. To clear a nullable field (e.g. `paper_size_name`), send it explicitly as `null` — *omitted* fields are ignored, *null* fields are cleared.
+
+Numeric fields with a documented range below (margins, transforms, plotter speeds, optimize tolerance) are silently clamped to the nearest bound rather than returning `400`. Margins are floored at `0`; `transform_offset_x_mm` / `transform_offset_y_mm` are clamped to `±paper_width_mm` / `±paper_height_mm`.
 
 Editable fields:
 
