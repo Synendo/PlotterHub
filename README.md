@@ -8,7 +8,7 @@ Open `http://plotterhub.local/` (or whatever your Pi's hostname is) and you get 
 
 I didn't like that my iDraw H SE A3 plotter had to stay connected to my laptop to run a plot. Luckily it's compatible with the great [AxiDraw software](https://axidraw.com/), which can be installed on a Raspberry Pi — so this repo is just a UI around [AxiDraw's Python library](https://axidraw.com/doc/py_api/).
 
-I also had a look at [saxi](https://github.com/nornagon/saxi), but it didn't support the physical pause button on my iDraw. AxiDraw does recognize button presses, so Plotter Hub supports it: press the button once to pause, press it a second time to resume the plot.
+I also had a look at [saxi](https://github.com/nornagon/saxi), but it didn't support the physical pause button on my iDraw. AxiDraw does recognize button presses, so Plotter Hub supports it: press the button once to pause, press it a second time to resume the plot. The same button also continues to the next layer when the plot is paused for a pen change.
 
 **Disclaimer:** this code was completely created by [Claude Code](https://claude.com/claude-code) (Claude Opus 4.7, 1M-context).
 

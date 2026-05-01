@@ -639,6 +639,18 @@ def pause_queue():
     return {"ok": True}
 
 
+@app.post("/queue/pause-at-pen-up")
+def pause_at_pen_up_queue():
+    job = state.active_job()
+    if job is None or job["status"] != "plotting":
+        raise HTTPException(409, "no active plotting job")
+    try:
+        plot_worker.pause_at_pen_lift_active()
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    return {"ok": True}
+
+
 @app.post("/queue/resume")
 def resume_queue():
     try:

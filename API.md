@@ -179,12 +179,13 @@ curl -X POST http://plotterhub.local/api/v1/jobs \
 
 ### Queue control
 
-All five endpoints take no body, return `{"ok": true}` on success, and respond `409 Conflict` (with a `detail` message) when the action isn't valid in the current state.
+All endpoints take no body, return `{"ok": true}` on success, and respond `409 Conflict` (with a `detail` message) when the action isn't valid in the current state.
 
 | Method | Path | What it does | 409 conditions |
 |---|---|---|---|
 | `POST` | `/api/v1/queue/plot` | Start the queue. Picks up the first queued job. | No queued job; queue already running. |
 | `POST` | `/api/v1/queue/pause` | Pause the active plot. Pen is raised; resumable. | No actively-plotting job. |
+| `POST` | `/api/v1/queue/pause-at-pen-up` | Soft pause: defer until the next pen lift, so the pen doesn't stop mid-stroke (useful for pump-action pens). Pauses immediately if the pen is already up. While pending, the snapshot field `pause_at_pen_up_pending` is `true`. | No actively-plotting job. |
 | `POST` | `/api/v1/queue/resume` | Resume a paused plot. | No paused job; missing resume data. |
 | `POST` | `/api/v1/queue/continue` | Advance past a pen-change pause, or accept the next job after `awaiting_next_job`. | Nothing waiting on a continue. |
 | `POST` | `/api/v1/queue/calibrate` | At a pen-change pause, plot every layer with `type: "calibration"` (regardless of `selected`) as a one-shot side plot, then return to `awaiting_pen_change`. Lets the user verify pen alignment between layers without advancing the main plot. | Active job is not in `awaiting_pen_change`; job has no calibration-typed layers. |

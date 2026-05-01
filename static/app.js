@@ -10,6 +10,7 @@ const queueControls = $("queue-controls");
 const topMessage = $("top-message");
 const plotBtn = $("plot-btn");
 const pauseBtn = $("pause-btn");
+const pausePenUpBtn = $("pause-pen-up-btn");
 const resumeBtn = $("resume-btn");
 const continueBtn = $("continue-btn");
 const calibrateBtn = $("calibrate-btn");
@@ -1238,6 +1239,7 @@ async function moveJob(id, delta) {
 
 plotBtn.addEventListener("click", () => postAction("/queue/start"));
 pauseBtn.addEventListener("click", () => postAction("/queue/pause"));
+pausePenUpBtn.addEventListener("click", () => postAction("/queue/pause-at-pen-up"));
 resumeBtn.addEventListener("click", () => postAction("/queue/resume"));
 continueBtn.addEventListener("click", () => postAction("/queue/continue"));
 calibrateBtn.addEventListener("click", () => postAction("/queue/calibrate"));
@@ -1260,6 +1262,10 @@ function applyTopControls() {
 
   plotBtn.hidden = !!active || s.awaiting_next_job || !s.queue.some((j) => j.status === "queued");
   pauseBtn.hidden = !active || status !== "plotting";
+  pausePenUpBtn.hidden = !active || status !== "plotting";
+  const penUpPending = !!s.pause_at_pen_up_pending;
+  pausePenUpBtn.textContent = penUpPending ? "Pausing at pen lift…" : "Pause at Pen Lift";
+  pausePenUpBtn.disabled = penUpPending;
   resumeBtn.hidden = !active || status !== "paused";
   continueBtn.hidden = !(s.awaiting_next_job || (active && status === "awaiting_pen_change"));
   // Calibration button: visible only at a pen-change pause when this job has
@@ -1649,6 +1655,10 @@ settingsModal.querySelectorAll(".card-section-reset").forEach((btn) => {
 
 // ───── Pen cursor on active job's preview ────────────────────────────────
 
+const PEN_POSITION_STATUSES = new Set([
+  "plotting", "paused", "awaiting_pen_change", "plotting_calibration", "homing",
+]);
+
 function updatePenCursor(msg) {
   const active = serverState.active_id ? cardEls.get(serverState.active_id) : null;
   if (!active) return;
@@ -1665,6 +1675,18 @@ function hideAllPenCursors() {
   document.querySelectorAll(".pen-cursor").forEach((c) => { c.hidden = true; });
 }
 
+function applyPenCursor() {
+  const job = serverState.active_id
+    ? serverState.queue.find((j) => j.job_id === serverState.active_id)
+    : null;
+  if (!job || !PEN_POSITION_STATUSES.has(job.status)) {
+    hideAllPenCursors();
+    return;
+  }
+  const pos = serverState.last_pen_position;
+  if (pos) updatePenCursor(pos);
+}
+
 // ───── WebSocket ─────────────────────────────────────────────────────────
 
 function connectWs() {
@@ -1676,9 +1698,7 @@ function connectWs() {
       serverState = msg;
       renderQueue();
       applyTopControls();
-      if (!serverState.active_id || (serverState.queue.find((j) => j.job_id === serverState.active_id)?.status !== "plotting")) {
-        hideAllPenCursors();
-      }
+      applyPenCursor();
     } else if (msg.type === "position") {
       updatePenCursor(msg);
     }

@@ -59,6 +59,8 @@ def _check_status_transition(job_id: str, current: str | None, new: str) -> None
 _queue: list[dict] = []
 _active_id: str | None = None
 _awaiting_next_job: bool = False
+_pause_at_pen_up_pending: bool = False
+_last_pen_position: dict | None = None
 _error: str | None = None
 
 _clients: set = set()
@@ -157,6 +159,8 @@ def snapshot() -> dict:
         "queue": [deepcopy(j) for j in _queue],
         "active_id": _active_id,
         "awaiting_next_job": _awaiting_next_job,
+        "pause_at_pen_up_pending": _pause_at_pen_up_pending,
+        "last_pen_position": dict(_last_pen_position) if _last_pen_position else None,
         "status": _derive_top_status(),
         "error": _error,
     }
@@ -273,6 +277,19 @@ def set_awaiting_next_job(flag: bool) -> None:
     _broadcast()
 
 
+def set_pause_at_pen_up_pending(flag: bool) -> None:
+    global _pause_at_pen_up_pending
+    new = bool(flag)
+    if new == _pause_at_pen_up_pending:
+        return
+    _pause_at_pen_up_pending = new
+    _broadcast()
+
+
+def pause_at_pen_up_pending() -> bool:
+    return _pause_at_pen_up_pending
+
+
 def set_error(err: str | None) -> None:
     global _error
     _error = err
@@ -305,10 +322,20 @@ def _broadcast() -> None:
 
 
 def emit_position(x_mm: float, y_mm: float, pen_down: bool) -> None:
+    global _last_pen_position
+    _last_pen_position = {"x_mm": x_mm, "y_mm": y_mm, "pen_down": pen_down}
     if _loop is None or _event_queue is None:
         return
     payload = {"type": "position", "x_mm": x_mm, "y_mm": y_mm, "pen_down": pen_down}
     _loop.call_soon_threadsafe(_event_queue.put_nowait, payload)
+
+
+def clear_last_pen_position() -> None:
+    global _last_pen_position
+    if _last_pen_position is None:
+        return
+    _last_pen_position = None
+    _broadcast()
 
 
 async def drain_events() -> None:

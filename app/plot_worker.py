@@ -117,13 +117,19 @@ def _position_poll_loop() -> None:
             try:
                 x_in = ad.pen.phys.xpos
                 y_in = ad.pen.phys.ypos
+                z_up = getattr(ad.pen.phys, "z_up", None)
                 if x_in is not None and y_in is not None:
-                    z_up = getattr(ad.pen.phys, "z_up", None)
                     pen_down = (z_up is False)
                     key = (x_in, y_in, pen_down)
                     if key != last:
                         state.emit_position(x_in * 25.4, y_in * 25.4, pen_down)
                         last = key
+                if z_up is True and state.pause_at_pen_up_pending():
+                    state.set_pause_at_pen_up_pending(False)
+                    try:
+                        ad.transmit_pause_request()
+                    except Exception:
+                        log.exception("pen-lift pause request failed")
             except Exception:
                 pass
         _stop_position.wait(_POSITION_POLL_INTERVAL_S)
@@ -143,11 +149,15 @@ def _stop_position_poll() -> None:
     if t is not None and t.is_alive() and threading.current_thread() is not t:
         t.join(timeout=1.0)
     _position_thread = None
+    state.set_pause_at_pen_up_pending(False)
+
+
+_BUTTON_ACTIVE_STATUSES = ("paused", "awaiting_pen_change")
 
 
 def _button_poll_loop(job_id: str) -> None:
     port = None
-    pressed = False
+    pressed_status: str | None = None
     try:
         port = ebb_serial.openPort()
         if port is None:
@@ -158,14 +168,14 @@ def _button_poll_loop(job_id: str) -> None:
             return
         while not _stop_polling.is_set():
             job = state.get_job(job_id)
-            if job is None or job["status"] != "paused":
+            if job is None or job["status"] not in _BUTTON_ACTIVE_STATUSES:
                 return
             try:
                 response = ebb_motion.QueryPRGButton(port, verbose=False)
             except Exception:
                 break
             if response and str(response).strip().startswith("1"):
-                pressed = True
+                pressed_status = job["status"]
                 break
             _stop_polling.wait(_BUTTON_POLL_INTERVAL_S)
     finally:
@@ -175,10 +185,15 @@ def _button_poll_loop(job_id: str) -> None:
             except Exception:
                 pass
 
-    if pressed:
-        job = state.get_job(job_id)
-        if job and job["status"] == "paused":
-            threading.Thread(target=_safe_resume, daemon=True).start()
+    if pressed_status is None:
+        return
+    job = state.get_job(job_id)
+    if job is None or job["status"] != pressed_status:
+        return
+    if pressed_status == "paused":
+        threading.Thread(target=_safe_resume, daemon=True).start()
+    elif pressed_status == "awaiting_pen_change":
+        threading.Thread(target=_safe_continue, daemon=True).start()
 
 
 def _safe_resume() -> None:
@@ -186,6 +201,13 @@ def _safe_resume() -> None:
         resume_active()
     except Exception:
         log.exception("auto-resume via button press failed")
+
+
+def _safe_continue() -> None:
+    try:
+        continue_next()
+    except Exception:
+        log.exception("auto-continue via button press failed")
 
 
 def _start_button_poll(job_id: str) -> None:
@@ -277,8 +299,27 @@ def start_queue() -> None:
 
 
 def pause_active() -> None:
+    state.set_pause_at_pen_up_pending(False)
     if _current_ad is not None:
         _current_ad.transmit_pause_request()
+
+
+def pause_at_pen_lift_active() -> None:
+    """Soft pause: defer until the next pen lift, so the pen doesn't stop
+    mid-stroke (which can leave a dot with pump-action pens). If the pen is
+    already up when called, pauses immediately."""
+    ad = _current_ad
+    if ad is None:
+        raise RuntimeError("No active plot")
+    z_up = None
+    try:
+        z_up = getattr(ad.pen.phys, "z_up", None)
+    except Exception:
+        z_up = None
+    if z_up is True:
+        ad.transmit_pause_request()
+        return
+    state.set_pause_at_pen_up_pending(True)
 
 
 def resume_active() -> None:
@@ -809,14 +850,17 @@ def _run_staged_loop(job_id: str, svg_path: Path, first_mode: str) -> None:
         if next_i < len(new_stages):
             if job.get("pause_between_layers", True) and len(new_stages) > 1:
                 state.update_job(job_id, status="awaiting_pen_change")
+                _start_button_poll(job_id)
                 while True:
                     _continue_event.wait()
                     _continue_event.clear()
                     if _cancel_flag.is_set():
+                        _stop_button_poll()
                         _cancel_flag.clear()
                         state.update_job(job_id, status="cancelled")
                         return
                     if _calibrate_event.is_set():
+                        _stop_button_poll()
                         _calibrate_event.clear()
                         _run_calibration_phase(job_id, svg_path)
                         if _cancel_flag.is_set():
@@ -827,8 +871,10 @@ def _run_staged_loop(job_id: str, svg_path: Path, first_mode: str) -> None:
                         # Back to the pause point; loop and wait for the next
                         # continue / calibrate / cancel.
                         state.update_job(job_id, status="awaiting_pen_change")
+                        _start_button_poll(job_id)
                         continue
                     # Plain continue → break out and run the next stage.
+                    _stop_button_poll()
                     break
             mode = "plot"
             continue
