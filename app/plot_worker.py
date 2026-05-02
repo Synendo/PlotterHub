@@ -51,6 +51,10 @@ _POSITION_POLL_INTERVAL_S = 0.1
 
 _preview_cache: "OrderedDict[str, dict]" = OrderedDict()
 _PREVIEW_CACHE_MAX = 20
+# Preview is CPU-heavy (pyaxidraw simulation). The plot worker AND the plan
+# queue both call _run_preview; this lock guarantees only one preview
+# subprocess at a time so they don't fight over cores on the Pi.
+_preview_lock = threading.Lock()
 
 _UPLOAD_DIR_LAZY: Path | None = None
 
@@ -251,7 +255,8 @@ def _run_stage(current_svg: Path, mode: str, job: dict) -> tuple[int, str]:
         _current_ad = None
 
 
-def _run_preview(preview_svg_path: Path, job: dict) -> dict | None:
+def _run_preview(preview_svg_path: Path, job: dict,
+                 cancel_event: threading.Event | None = None) -> dict | None:
     global _preview_proc
     runner = Path(__file__).parent / "preview_runner.py"
     args = [
@@ -263,12 +268,29 @@ def _run_preview(preview_svg_path: Path, job: dict) -> dict | None:
         str(job["speed_penup"]),
         str(job["acceleration"]),
     ]
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    _preview_proc = proc
-    try:
-        stdout, stderr = proc.communicate()
-    finally:
-        _preview_proc = None
+    with _preview_lock:
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        _preview_proc = proc
+        watcher: threading.Thread | None = None
+        if cancel_event is not None:
+            def _watch() -> None:
+                # Poll: wake on either cancel_event being set or the proc
+                # finishing on its own. 200ms is fine — preview takes seconds.
+                while not cancel_event.is_set():
+                    if proc.poll() is not None:
+                        return
+                    cancel_event.wait(timeout=0.2)
+                if proc.poll() is None:
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+            watcher = threading.Thread(target=_watch, daemon=True)
+            watcher.start()
+        try:
+            stdout, stderr = proc.communicate()
+        finally:
+            _preview_proc = None
 
     if proc.returncode != 0:
         log.warning("preview subprocess exited rc=%s: %s", proc.returncode, stderr.strip())
@@ -282,6 +304,53 @@ def _run_preview(preview_svg_path: Path, job: dict) -> dict | None:
         except json.JSONDecodeError:
             continue
     return None
+
+
+def compute_preview(job: dict, svg_path: Path,
+                    cancel_event: threading.Event | None = None) -> dict | None:
+    """Build the combined+transformed preview SVG and run the preview
+    subprocess for ``job``. Returns the estimate dict (or None on failure /
+    cancel).
+
+    Cached by ``_preview_cache`` and serialized via ``_preview_lock`` so the
+    plan queue and the plot worker can both call this without racing on
+    duplicate work or two simultaneous CPU-bound subprocesses.
+    """
+    selections = [s for s in job["layer_selections"] if s.get("selected", True)]
+    if not selections:
+        return None
+    all_selected = [s["index"] for s in selections]
+    cache_key = _preview_cache_key(svg_path, all_selected, job)
+    cached = _preview_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    if cancel_event is not None and cancel_event.is_set():
+        return None
+
+    combined = svg_path.with_name(f"{job['svg_id']}.combined.filt.svg")
+    preview_svg = svg_path.with_name(f"{job['svg_id']}.preview.svg")
+    try:
+        svg_utils.filter_to_layers(svg_path, all_selected, combined)
+        svg_utils.transform_to_paper(
+            combined, preview_svg,
+            job["paper_width_mm"], job["paper_height_mm"],
+            job["margin_top_mm"], job["margin_right_mm"],
+            job["margin_bottom_mm"], job["margin_left_mm"],
+            job["fit_content"],
+            transform_scale=job.get("transform_scale", 1.0),
+            transform_rotation_deg=job.get("transform_rotation_deg", 0.0),
+            transform_offset_x_mm=job.get("transform_offset_x_mm", 0.0),
+            transform_offset_y_mm=job.get("transform_offset_y_mm", 0.0),
+        )
+    except Exception:
+        log.exception("compute_preview: filter/transform failed for job %s", job.get("job_id"))
+        return None
+
+    estimate = _run_preview(preview_svg, job, cancel_event=cancel_event)
+    if estimate:
+        _preview_cache_put(cache_key, estimate)
+    return estimate
 
 
 # Public control API -------------------------------------------------------
@@ -442,9 +511,6 @@ def shutdown_gracefully(timeout_s: float = 30.0) -> None:
         t.join(timeout=timeout_s)
         if t.is_alive():
             log.warning("graceful shutdown: worker thread did not exit within %ss", timeout_s)
-    # Tear down the optimize worker last so an in-flight upload-pre-optimize
-    # gets a chance to finish cleanly when nothing else is going on.
-    optimize_queue.shutdown()
 
 
 # Queue loop ---------------------------------------------------------------
@@ -703,51 +769,47 @@ def _run_job(job_id: str) -> None:
     svg_path = optimized
 
     # --- Planning (preview) -------------------------------------------------
-    state.update_job(job_id,
-                     stages=stages,
-                     current_stage_index=0,
-                     status="planning",
-                     started_at=time.time(),
-                     plotting_started_at=None,
-                     resume_path=None,
-                     error=None,
-                     estimated_total_seconds=None,
-                     distance_pendown_m=None,
-                     distance_total_m=None,
-                     pen_lifts=None)
+    # Fast path: if the plan queue already populated _preview_cache (and the
+    # job's estimate fields), don't flip to "planning" — go straight from
+    # optimizing/queued to plotting via _run_staged_loop. Avoids a stale
+    # estimate flicker and a one-frame "Planning" pill in the UI.
+    selections_for_preview = [s for s in job["layer_selections"] if s.get("selected", True)]
+    all_selected = [s["index"] for s in selections_for_preview]
+    cached_estimate = _preview_cache_get(_preview_cache_key(svg_path, all_selected, job)) \
+        if selections_for_preview else None
 
-    all_selected = [i for s in selections for i in [s["index"]]]
-    cache_key = _preview_cache_key(svg_path, all_selected, job)
-    cached = _preview_cache_get(cache_key)
-    estimate: dict | None = None
-    if cached is not None:
-        log.info("preview cache hit for job %s", job_id)
-        estimate = cached
+    if cached_estimate is not None:
+        state.update_job(job_id,
+                         stages=stages,
+                         current_stage_index=0,
+                         started_at=time.time(),
+                         plotting_started_at=None,
+                         resume_path=None,
+                         error=None,
+                         plan_status="ready",
+                         **cached_estimate)
     else:
-        combined = svg_path.with_name(f"{job['svg_id']}.combined.filt.svg")
-        svg_utils.filter_to_layers(svg_path, all_selected, combined)
-        preview_svg = svg_path.with_name(f"{job['svg_id']}.preview.svg")
-        svg_utils.transform_to_paper(
-            combined, preview_svg,
-            job["paper_width_mm"], job["paper_height_mm"],
-            job["margin_top_mm"], job["margin_right_mm"],
-            job["margin_bottom_mm"], job["margin_left_mm"],
-            job["fit_content"],
-            transform_scale=job.get("transform_scale", 1.0),
-            transform_rotation_deg=job.get("transform_rotation_deg", 0.0),
-            transform_offset_x_mm=job.get("transform_offset_x_mm", 0.0),
-            transform_offset_y_mm=job.get("transform_offset_y_mm", 0.0),
-        )
-        estimate = _run_preview(preview_svg, job)
+        state.update_job(job_id,
+                         stages=stages,
+                         current_stage_index=0,
+                         status="planning",
+                         started_at=time.time(),
+                         plotting_started_at=None,
+                         resume_path=None,
+                         error=None,
+                         estimated_total_seconds=None,
+                         distance_pendown_m=None,
+                         distance_total_m=None,
+                         pen_lifts=None)
+
+        estimate = compute_preview(job, svg_path)
+
+        if _cancel_flag.is_set():
+            state.update_job(job_id, status="cancelled")
+            return
+
         if estimate:
-            _preview_cache_put(cache_key, estimate)
-
-    if _cancel_flag.is_set():
-        state.update_job(job_id, status="cancelled")
-        return
-
-    if estimate:
-        state.update_job(job_id, **estimate)
+            state.update_job(job_id, plan_status="ready", **estimate)
 
     # --- Stages -------------------------------------------------------------
     _run_staged_loop(job_id, svg_path, first_mode="plot")

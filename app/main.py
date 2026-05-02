@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from . import config, optimize_queue, plot_worker, state, svg_utils
+from . import config, optimize_queue, plan_queue, plot_worker, state, svg_utils
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -41,12 +41,19 @@ LENGTH_UNIT_TO_MM: dict[str, float] = {"mm": 1.0, "cm": 10.0, "in": 25.4}
 async def lifespan(_app: FastAPI):
     state.init(asyncio.get_running_loop())
     optimize_queue.start()
+    plan_queue.start()
     optimize_queue.bootstrap_from_disk()
+    plan_queue.bootstrap_from_state()
     drain_task = asyncio.create_task(state.drain_events())
     try:
         yield
     finally:
         await asyncio.get_running_loop().run_in_executor(None, plot_worker.shutdown_gracefully)
+        # Tear down preprocessing workers after the plot worker so any
+        # in-flight upload pre-opt or background plan finishes cleanly when
+        # nothing else is competing for CPU.
+        plan_queue.shutdown()
+        optimize_queue.shutdown()
         drain_task.cancel()
 
 
@@ -237,6 +244,7 @@ def create_job(req: JobCreate):
                       payload.get("paper_height_mm"))
     job = state.add_job(payload)
     optimize_queue.enqueue_for_job(job)
+    plan_queue.enqueue(job)
     return job
 
 
@@ -272,8 +280,21 @@ def update_job(job_id: str, req: JobUpdate):
     if j["status"] != "queued":
         updates["status"] = "queued"
         updates["error"] = None
+    # Any edit can change the preview cache key, so the on-record estimate is
+    # potentially stale. Drop it; plan_queue will recompute.
+    updates.update({
+        "estimated_total_seconds": None,
+        "distance_pendown_m": None,
+        "distance_total_m": None,
+        "pen_lifts": None,
+        "plan_status": None,
+    })
     state.update_job(job_id, **updates)
-    return state.get_job(job_id)
+    fresh = state.get_job(job_id)
+    plan_queue.cancel(job_id)
+    optimize_queue.enqueue_for_job(fresh)
+    plan_queue.enqueue(fresh)
+    return fresh
 
 
 def delete_svg_files(svg_id: str | None) -> None:
@@ -282,9 +303,10 @@ def delete_svg_files(svg_id: str | None) -> None:
     # can't hit another job's files.
     if not svg_id:
         return
-    # Drop any pending or in-flight optimize work first so the worker doesn't
-    # race us by writing a fresh .opt.svg right after we unlink.
+    # Drop any pending or in-flight preprocessing first so the workers don't
+    # race us by writing a fresh .opt.svg / .preview.svg right after we unlink.
     optimize_queue.cancel(svg_id)
+    plan_queue.cancel_for_svg(svg_id)
     for p in UPLOAD_DIR.glob(f"{svg_id}.*"):
         try:
             p.unlink()
@@ -477,6 +499,7 @@ async def api_create_job(file: UploadFile = File(...),
     )
     job = state.add_job(job_payload)
     optimize_queue.enqueue_for_job(job)
+    plan_queue.enqueue(job)
     if meta.auto_plot and not blockers_present:
         plot_worker.start_queue()
     return job
@@ -628,8 +651,16 @@ def requeue_job(job_id: str):
         raise HTTPException(409, "Cannot re-queue a job that is still running")
     state.update_job(job_id, status="queued", error=None, resume_path=None,
                      started_at=None, plotting_started_at=None,
-                     stages=[], current_stage_index=0)
-    return state.get_job(job_id)
+                     stages=[], current_stage_index=0,
+                     plan_status=None,
+                     estimated_total_seconds=None,
+                     distance_pendown_m=None,
+                     distance_total_m=None,
+                     pen_lifts=None)
+    fresh = state.get_job(job_id)
+    optimize_queue.enqueue_for_job(fresh)
+    plan_queue.enqueue(fresh)
+    return fresh
 
 
 # Queue control ----------------------------------------------------------

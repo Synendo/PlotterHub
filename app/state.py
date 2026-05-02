@@ -27,9 +27,12 @@ _IN_FLIGHT_STATUSES = {"planning", "plotting", "homing", "awaiting_pen_change"}
 # as is the startup rehydrate code in _load_from_disk — that path normalises
 # orphaned in-flight statuses by direct mutation, not as a real transition.
 _VALID_TRANSITIONS: dict[str, set[str]] = {
-    "queued":               {"awaiting_optimize", "optimizing", "planning"},
-    "awaiting_optimize":    {"optimizing", "planning", "cancelled", "failed"},
-    "optimizing":           {"planning", "cancelled", "failed"},
+    # `plotting` is allowed straight from queued/awaiting_optimize/optimizing
+    # so the plot worker can skip the `planning` status when the preview is
+    # already cached (the plan queue ran ahead of the user's Plot click).
+    "queued":               {"awaiting_optimize", "optimizing", "planning", "plotting"},
+    "awaiting_optimize":    {"optimizing", "planning", "plotting", "cancelled", "failed"},
+    "optimizing":           {"planning", "plotting", "cancelled", "failed"},
     "planning":             {"plotting", "cancelled"},
     "plotting":             {"paused", "homing", "awaiting_pen_change",
                              "completed", "failed"},

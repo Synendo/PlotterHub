@@ -696,6 +696,12 @@ function updateCard(card, job) {
     if (svgInfo && svgInfo.status === "optimizing") subParts.push("optimizing SVG…");
     else if (svgInfo && svgInfo.status === "pending") subParts.push("waiting to optimize SVG…");
   }
+  // And the background-planning state, so the user knows whether the plot
+  // click will be instant or still has to compute the estimate.
+  if (job.status === "queued" &&
+      (job.plan_status === "pending" || job.plan_status === "planning")) {
+    subParts.push(job.plan_status === "planning" ? "planning…" : "waiting to plan…");
+  }
   card.querySelector(".job-sub").textContent = subParts.join(" · ");
 
   const pill = card.querySelector(".job-status-pill");
