@@ -21,6 +21,7 @@ const queueProgress = $("queue-progress");
 const STATUS_LABELS = {
   idle: "Idle",
   queued: "Queued",
+  awaiting_optimize: "Waiting to optimize",
   optimizing: "Optimizing",
   planning: "Planning",
   plotting: "Plotting",
@@ -687,6 +688,14 @@ function updateCard(card, job) {
     subParts.push(`${layerCount} layer${layerCount > 1 ? "s" : ""}`);
   }
   if (job.estimated_total_seconds) subParts.push(formatDuration(Math.round(job.estimated_total_seconds)));
+  // Surface the SVG-level pre-optimize state on queued cards so the user knows
+  // a future "Plot" click won't be instant if their SVG is still in the
+  // optimize queue.
+  if (job.status === "queued" && job.optimize_svg) {
+    const svgInfo = (serverState.svgs || {})[job.svg_id];
+    if (svgInfo && svgInfo.status === "optimizing") subParts.push("optimizing SVG…");
+    else if (svgInfo && svgInfo.status === "pending") subParts.push("waiting to optimize SVG…");
+  }
   card.querySelector(".job-sub").textContent = subParts.join(" · ");
 
   const pill = card.querySelector(".job-status-pill");
@@ -1295,6 +1304,7 @@ function applyTopControls() {
     let msg = "";
     if (active.error) msg = `Error: ${active.error}`;
     else if (status === "awaiting_pen_change") msg = "Swap the pen if needed, then click Continue for the next layer.";
+    else if (status === "awaiting_optimize") msg = "Waiting for SVG optimization to finish…";
     else if (status === "optimizing") msg = "Optimizing SVG…";
     topMessage.textContent = msg;
     topMessage.className = active.error ? "error" : "muted";

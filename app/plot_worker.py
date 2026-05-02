@@ -11,7 +11,7 @@ from pathlib import Path
 from plotink import ebb_motion, ebb_serial
 from pyaxidraw import axidraw
 
-from . import config, state, svg_optimize, svg_utils
+from . import config, optimize_queue, state, svg_optimize, svg_utils
 
 log = logging.getLogger(__name__)
 
@@ -406,9 +406,12 @@ def cancel_active() -> None:
                 _preview_proc.terminate()
             except Exception:
                 pass
-    elif st == "optimizing":
+    elif st in ("awaiting_optimize", "optimizing"):
+        # The plot worker is sitting in optimize_queue.request_for_job's
+        # poll loop — flipping the cancel flag is enough; it will yank the
+        # task out of the queue (or kill the inflight subprocess if it's ours)
+        # without disturbing unrelated upload-time optimizations.
         _cancel_flag.set()
-        svg_optimize.cancel_current()
     elif st == "awaiting_pen_change":
         _cancel_flag.set()
         _continue_event.set()
@@ -439,6 +442,9 @@ def shutdown_gracefully(timeout_s: float = 30.0) -> None:
         t.join(timeout=timeout_s)
         if t.is_alive():
             log.warning("graceful shutdown: worker thread did not exit within %ss", timeout_s)
+    # Tear down the optimize worker last so an in-flight upload-pre-optimize
+    # gets a chance to finish cleanly when nothing else is going on.
+    optimize_queue.shutdown()
 
 
 # Queue loop ---------------------------------------------------------------
@@ -529,8 +535,10 @@ def _run_optimize_phase(job_id: str, src_path: Path, stages: list) -> Path | Non
         should return immediately, the job has already been marked
         ``failed`` / ``cancelled``.
 
-    Cache: keyed by ``_optimize_cache_key`` and stored on the job as
-    ``optimized_with_key`` so re-plots with unchanged settings reuse the file.
+    Optimization is delegated to ``optimize_queue`` so we share the single
+    vpype worker with upload-time pre-optimizations. While we wait our turn
+    the job sits in ``awaiting_optimize``; once our task is picked up the
+    queue calls back and we flip to ``optimizing``.
     """
     job = state.get_job(job_id)
     if job is None or not job.get("optimize_svg"):
@@ -542,39 +550,34 @@ def _run_optimize_phase(job_id: str, src_path: Path, stages: list) -> Path | Non
         return opt_path
 
     state.update_job(job_id,
-                     status="optimizing",
+                     status="awaiting_optimize",
                      started_at=time.time(),
                      plotting_started_at=None,
                      error=None,
                      stages=stages,
                      current_stage_index=0)
 
-    cancelled = False
-    try:
-        svg_optimize.optimize_svg(
-            src_path, opt_path,
-            tolerance_mm=float(job.get("optimize_svg_tolerance_mm", 0.10)),
-            linemerge=bool(job.get("optimize_svg_linemerge", True)),
-            linesimplify=bool(job.get("optimize_svg_linesimplify", True)),
-            linesort=bool(job.get("optimize_svg_linesort", True)),
-            reloop=bool(job.get("optimize_svg_reloop", True)),
-        )
-    except svg_optimize.OptimizeError as e:
-        # Cancel-via-terminate manifests as a non-zero rc — fall through to
-        # the cancelled cleanup below instead of surfacing a "failed".
-        if not _cancel_flag.is_set():
-            state.update_job(job_id, status="failed",
-                             error=f"Optimization failed: {e}")
-            return None
-        cancelled = True
+    def _on_running() -> None:
+        # Same-status updates are fine (the queue's fast-path can race us into
+        # 'awaiting_optimize'), but a real transition flips us to optimizing.
+        state.update_job(job_id, status="optimizing")
 
-    if cancelled or _cancel_flag.is_set():
-        _cancel_flag.clear()
-        try:
-            opt_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        state.update_job(job_id, status="cancelled")
+    settings = optimize_queue.settings_from_job(job)
+    ok, err = optimize_queue.request_for_job(
+        job["svg_id"], settings, _on_running, _cancel_flag,
+    )
+
+    if not ok:
+        if err == "cancelled" or _cancel_flag.is_set():
+            _cancel_flag.clear()
+            try:
+                opt_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            state.update_job(job_id, status="cancelled")
+            return None
+        state.update_job(job_id, status="failed",
+                         error=f"Optimization failed: {err or 'unknown error'}")
         return None
 
     state.update_job(job_id, optimized_with_key=cache_key)

@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from . import config, plot_worker, state, svg_utils
+from . import config, optimize_queue, plot_worker, state, svg_utils
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -40,6 +40,8 @@ LENGTH_UNIT_TO_MM: dict[str, float] = {"mm": 1.0, "cm": 10.0, "in": 25.4}
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     state.init(asyncio.get_running_loop())
+    optimize_queue.start()
+    optimize_queue.bootstrap_from_disk()
     drain_task = asyncio.create_task(state.drain_events())
     try:
         yield
@@ -76,6 +78,7 @@ async def upload(file: UploadFile = File(...)):
     except Exception:
         path.unlink(missing_ok=True)
         raise HTTPException(400, "That doesn't look like a valid SVG.")
+    optimize_queue.enqueue_for_upload(svg_id)
     return {"id": svg_id, "filename": file.filename or "upload.svg", **info}
 
 
@@ -232,7 +235,9 @@ def create_job(req: JobCreate):
     payload = req.model_dump()
     _clamp_job_fields(payload, payload.get("paper_width_mm"),
                       payload.get("paper_height_mm"))
-    return state.add_job(payload)
+    job = state.add_job(payload)
+    optimize_queue.enqueue_for_job(job)
+    return job
 
 
 @app.get("/jobs")
@@ -277,6 +282,9 @@ def delete_svg_files(svg_id: str | None) -> None:
     # can't hit another job's files.
     if not svg_id:
         return
+    # Drop any pending or in-flight optimize work first so the worker doesn't
+    # race us by writing a fresh .opt.svg right after we unlink.
+    optimize_queue.cancel(svg_id)
     for p in UPLOAD_DIR.glob(f"{svg_id}.*"):
         try:
             p.unlink()
@@ -395,6 +403,7 @@ async def api_create_job(file: UploadFile = File(...),
     except Exception as e:
         path.unlink(missing_ok=True)
         raise HTTPException(400, f"invalid SVG: {e}")
+    optimize_queue.enqueue_for_upload(svg_id)
 
     paper_width_mm, paper_height_mm, paper_name = _resolve_paper(
         meta.paper_size, info.get("width_mm"), info.get("height_mm"),
@@ -467,6 +476,7 @@ async def api_create_job(file: UploadFile = File(...),
         j["status"] not in _TERMINAL for j in state.snapshot()["queue"]
     )
     job = state.add_job(job_payload)
+    optimize_queue.enqueue_for_job(job)
     if meta.auto_plot and not blockers_present:
         plot_worker.start_queue()
     return job

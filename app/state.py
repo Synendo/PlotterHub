@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from copy import deepcopy
@@ -19,14 +20,15 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 # `plotting_calibration` is handled separately — it has no checkpoint, but
 # falling back to awaiting_pen_change is harmless (user re-runs calibration
 # if they want), so we don't lump it in here.
-_IN_FLIGHT_STATUSES = {"optimizing", "planning", "plotting", "homing", "awaiting_pen_change"}
+_IN_FLIGHT_STATUSES = {"planning", "plotting", "homing", "awaiting_pen_change"}
 
 # Permitted job-status transitions, validated centrally in update_job /
 # update_job_silent. Same-status updates (no actual transition) are exempt,
 # as is the startup rehydrate code in _load_from_disk — that path normalises
 # orphaned in-flight statuses by direct mutation, not as a real transition.
 _VALID_TRANSITIONS: dict[str, set[str]] = {
-    "queued":               {"optimizing", "planning"},
+    "queued":               {"awaiting_optimize", "optimizing", "planning"},
+    "awaiting_optimize":    {"optimizing", "planning", "cancelled", "failed"},
     "optimizing":           {"planning", "cancelled", "failed"},
     "planning":             {"plotting", "cancelled"},
     "plotting":             {"paused", "homing", "awaiting_pen_change",
@@ -57,6 +59,14 @@ def _check_status_transition(job_id: str, current: str | None, new: str) -> None
     raise InvalidTransition(f"job {job_id}: {current!r} → {new!r}")
 
 _queue: list[dict] = []
+# svg_id -> {"status": "pending"|"optimizing"|"ready"|"failed",
+#            "settings_key": str | None,
+#            "error": str | None,
+#            "updated_at": float}
+# Tracks the optimize lifecycle of an uploaded SVG, independently of any job
+# that may reference it. Persisted in state.json so a service restart can tell
+# whether the on-disk .opt.svg still matches the settings it was produced with.
+_svgs: dict[str, dict] = {}
 _active_id: str | None = None
 _awaiting_next_job: bool = False
 _pause_at_pen_up_pending: bool = False
@@ -66,6 +76,11 @@ _error: str | None = None
 _clients: set = set()
 _event_queue: asyncio.Queue | None = None
 _loop: asyncio.AbstractEventLoop | None = None
+# Serializes writes to STATE_PATH. The asyncio loop, the plot worker thread,
+# and the optimize worker thread can all call _persist concurrently. Without
+# this lock two writers would race on the same .tmp path: one renames it
+# away, the other crashes its os.replace with FileNotFoundError.
+_persist_lock = threading.Lock()
 
 
 def init(loop: asyncio.AbstractEventLoop) -> None:
@@ -83,7 +98,7 @@ def _load_from_disk() -> None:
     resume SVG is on disk, OR if it was a clean awaiting_pen_change boundary)
     or 'failed' otherwise, never as 'plotting'.
     """
-    global _queue, _active_id
+    global _queue, _active_id, _svgs
     if not STATE_PATH.exists():
         return
     try:
@@ -102,7 +117,16 @@ def _load_from_disk() -> None:
         status = job.get("status")
         resume_path = job.get("resume_path")
         resume_ok = bool(resume_path) and Path(resume_path).exists()
-        if status == "awaiting_pen_change":
+        if status in ("awaiting_optimize", "optimizing"):
+            # Crashed before plotting started — no pen state to recover. Send
+            # the job back to queued so the user can plot it again with one
+            # click. The optimize phase will re-run on its own.
+            job["status"] = "queued"
+            job["error"] = None
+            job["resume_path"] = None
+            job["stages"] = []
+            job["current_stage_index"] = 0
+        elif status == "awaiting_pen_change":
             # Clean checkpoint between stages: no resume SVG needed — the next
             # stage will be filtered/rendered from current_stage_index fresh.
             job["status"] = "paused"
@@ -137,6 +161,29 @@ def _load_from_disk() -> None:
             _active_id = j["job_id"]
             break
 
+    # Reload SVG optimize statuses. Drop entries whose source SVG is gone, and
+    # demote any "pending"/"optimizing" leftovers from a crashed worker to a
+    # safe state — the new worker will re-enqueue if appropriate.
+    raw_svgs = data.get("svgs") or {}
+    if isinstance(raw_svgs, dict):
+        for svg_id, entry in raw_svgs.items():
+            if not isinstance(entry, dict):
+                continue
+            if not (UPLOAD_DIR / f"{svg_id}.svg").exists():
+                continue
+            status = entry.get("status")
+            if status not in ("ready", "failed"):
+                # In-flight at crash time. We can't trust an .opt.svg the worker
+                # may have been mid-write to — drop the whole entry so the
+                # bootstrap re-enqueue picks it up cleanly.
+                continue
+            _svgs[svg_id] = {
+                "status": status,
+                "settings_key": entry.get("settings_key"),
+                "error": entry.get("error"),
+                "updated_at": float(entry.get("updated_at") or 0.0),
+            }
+
     log.info("state: loaded %d job(s) from %s", len(_queue), STATE_PATH)
 
 
@@ -144,19 +191,23 @@ def _persist() -> None:
     """Atomically write the queue to state.json. Called after every mutation.
 
     Writes to a sibling tmp file and renames so a crash mid-write can't
-    corrupt the file the next boot reads.
+    corrupt the file the next boot reads. Serialised under ``_persist_lock``
+    because the snapshot also needs to be a coherent point-in-time view of
+    ``_queue``+``_svgs`` rather than a half-applied write from another thread.
     """
-    try:
-        tmp = STATE_PATH.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps({"queue": _queue}, indent=2) + "\n")
-        os.replace(tmp, STATE_PATH)
-    except Exception:
-        log.exception("state: failed to persist %s", STATE_PATH)
+    with _persist_lock:
+        try:
+            tmp = STATE_PATH.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps({"queue": _queue, "svgs": _svgs}, indent=2) + "\n")
+            os.replace(tmp, STATE_PATH)
+        except Exception:
+            log.exception("state: failed to persist %s", STATE_PATH)
 
 
 def snapshot() -> dict:
     return {
         "queue": [deepcopy(j) for j in _queue],
+        "svgs": {k: dict(v) for k, v in _svgs.items()},
         "active_id": _active_id,
         "awaiting_next_job": _awaiting_next_job,
         "pause_at_pen_up_pending": _pause_at_pen_up_pending,
@@ -294,6 +345,30 @@ def set_error(err: str | None) -> None:
     global _error
     _error = err
     _broadcast()
+
+
+def set_svg_status(svg_id: str, status: str,
+                   settings_key: str | None = None,
+                   error: str | None = None) -> None:
+    _svgs[svg_id] = {
+        "status": status,
+        "settings_key": settings_key,
+        "error": error,
+        "updated_at": time.time(),
+    }
+    _persist()
+    _broadcast()
+
+
+def clear_svg_status(svg_id: str) -> None:
+    if _svgs.pop(svg_id, None) is not None:
+        _persist()
+        _broadcast()
+
+
+def get_svg_status(svg_id: str) -> dict | None:
+    e = _svgs.get(svg_id)
+    return dict(e) if e else None
 
 
 def next_queued_job() -> dict | None:

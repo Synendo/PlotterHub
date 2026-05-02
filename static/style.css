@@ -90,6 +90,7 @@ body > header h1 { margin: 0; font-size: 1.25rem; font-weight: 500; color: #222;
   color: #fff;
 }
 .status.idle { background: #555; }
+.status.awaiting_optimize { background: #818cf8; }
 .status.optimizing { background: #6366f1; }
 .status.planning { background: #a3a3a3; }
 .status.plotting { background: #3b82f6; }
