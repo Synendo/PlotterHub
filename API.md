@@ -101,7 +101,10 @@ All fields are optional. Unspecified booleans, speeds, and `selected` flags fall
       "index": 0,                     // Required — the 0-based Inkscape layer index.
       "name": "string",               // Optional — overrides the embedded `inkscape:label`.
       "type": "pattern" | "text" | "svg" | "calibration",  // Optional — drives a small icon in the UI.
-      "selected": false               // Optional, default true. `false` excludes the layer from the plot.
+      "selected": false,              // Optional, default true. `false` excludes the layer from the plot.
+      "speed_pendown": 25,            // Optional 1–110 — pen-down speed for this layer only.
+      "speed_penup": 75,              // Optional 1–110 — pen-up speed for this layer only.
+      "acceleration": 75              // Optional 1–100 — acceleration for this layer only.
     }
   ]
 }
@@ -119,6 +122,10 @@ Known presets: `A0`–`A5`, `B0`–`B5`, `Letter`, `Legal`, `Ledger`, `ANSI-C`, 
 ##### Layer overrides
 
 `layers[]` is keyed by `index` (matching the SVG's Inkscape layer order, 0-based). Layers not listed keep the SVG's embedded `inkscape:label`, have no `type`, and are **selected** by default. Listed layers can override `name`, `type`, and `selected` independently — supplying only `type` keeps the embedded label, and supplying only `selected: false` excludes the layer from the plot. If every layer is deselected the request returns `400`.
+
+`speed_pendown`, `speed_penup`, and `acceleration` are optional per-layer speed overrides: when set, they take precedence over the job's (document) and the system's speed settings for that layer only. Each axis falls back independently, so you can override just one. Out-of-range values are clamped, not rejected.
+
+Because a layer can only carry its own speed when it's plotted as a separate stage, **any** layer speed override forces per-layer staging — the layers plot as back-to-back stages even when `pause_between_layers` is `false` (the pen returns to the home corner between them). Note that the plot-time estimate is computed once at the job's base speed, so it is approximate when per-layer overrides are in play.
 
 Layer types are decorative — the icon is shown in the layer list:
 

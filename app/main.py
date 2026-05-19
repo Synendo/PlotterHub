@@ -352,6 +352,12 @@ class ApiLayer(BaseModel):
     name: str | None = None
     type: Literal["pattern", "text", "svg", "calibration"] | None = None
     selected: bool | None = None  # None == not specified == default True
+    # Optional per-layer speed overrides. When set, they take precedence over
+    # the job (document) / system speeds for that layer — see _run_job, which
+    # forces per-layer staging when any override is present.
+    speed_pendown: int | None = None
+    speed_penup: int | None = None
+    acceleration: int | None = None
 
 
 class ApiJobMetadata(_OptimizeOptionalFields):
@@ -446,6 +452,13 @@ async def api_create_job(file: UploadFile = File(...),
             sel["type"] = ovr.type
         if ovr and ovr.selected is False:
             sel["selected"] = False
+        # Optional per-layer speed overrides — clamped to the same ranges as
+        # the job-level speeds (out-of-range values corrected, not rejected).
+        for key in ("speed_pendown", "speed_penup", "acceleration"):
+            val = getattr(ovr, key) if ovr else None
+            if val is not None:
+                lo, hi = _CLAMP_RANGES[key]
+                sel[key] = int(max(lo, min(hi, val)))
         layer_selections.append(sel)
 
     if not info["layers"]:

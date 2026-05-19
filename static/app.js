@@ -1030,6 +1030,7 @@ function syncPreviewLayers(card, job) {
 function renderLayers(card, job) {
   const ctx = cardCtx.get(job.job_id);
   if (!ctx || !ctx.svg) return;
+  ensureSvgColors(card, ctx);
   const ul = card.querySelector(".layers");
   // Layer entries carry their own metadata (label, type) plus an optional
   // `selected` flag; entries with selected===false stay in the list so the
@@ -1044,11 +1045,15 @@ function renderLayers(card, job) {
     const checked = selected.has(layer.index);
     const override = overrides.get(layer.index);
     const displayLabel = (override && override.label) || layer.label;
-    const typeIcon = layerTypeIcon(override && override.type);
+    const swatch = layerSwatch(
+      override && override.type,
+      (ctx.svg.layerColors || {})[layer.index] || null,
+      ctx.svg.pageColor || null,
+    );
     li.innerHTML = `
       <label>
         <input type="checkbox" data-index="${layer.index}" ${checked ? "checked" : ""} />
-        ${typeIcon}
+        ${swatch}
         <span class="layer-label">${escapeHtml(displayLabel)}</span>
       </label>`;
     ul.appendChild(li);
@@ -1064,7 +1069,7 @@ function renderLayers(card, job) {
       );
       // Walk every SVG layer (not just the checked ones) so deselected
       // layers stay in the list with `selected: false`. Their label/type
-      // overrides survive a toggle off-and-on.
+      // and per-layer speed overrides survive a toggle off-and-on.
       const layers = ctx.svg.layers.map((l) => {
         const ovr = curOverrides.get(l.index);
         const sel = {
@@ -1073,6 +1078,11 @@ function renderLayers(card, job) {
           selected: checkedIndices.has(l.index),
         };
         if (ovr && ovr.type) sel.type = ovr.type;
+        // Carry through API-set per-layer speed overrides — there's no UI
+        // control for them, so a checkbox toggle here must not drop them.
+        for (const k of ["speed_pendown", "speed_penup", "acceleration"]) {
+          if (ovr && ovr[k] != null) sel[k] = ovr[k];
+        }
         return sel;
       });
       const selectedCount = layers.filter((l) => l.selected).length;
@@ -1099,11 +1109,14 @@ function renderStages(card, job) {
   const typeByIndex = new Map(
     (job.layer_selections || []).map((s) => [s.index, s.type])
   );
+  const ctx = cardCtx.get(job.job_id);
+  const layerColors = (ctx && ctx.svg && ctx.svg.layerColors) || {};
+  const pageColor = (ctx && ctx.svg && ctx.svg.pageColor) || null;
   job.stages.forEach((s, i) => {
     const li = document.createElement("li");
     li.className = `stage ${s.status}`;
     const icons = (s.layer_indices || [])
-      .map((idx) => layerTypeIcon(typeByIndex.get(idx)))
+      .map((idx) => layerSwatch(typeByIndex.get(idx), layerColors[idx] || null, pageColor))
       .join("");
     li.innerHTML = `<span class="stage-num">${i + 1}</span>
       ${icons}
@@ -1378,9 +1391,101 @@ const LAYER_TYPE_ICONS = {
   svg: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3.2"/><rect x="7.5" y="7.5" width="6.5" height="6.5"/><polygon points="3,14 9,14 6,9"/></svg>`,
   calibration: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="4.5"/><line x1="8" y1="1.5" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="14.5" y2="8"/></svg>`,
 };
-function layerTypeIcon(type) {
-  if (!type || !LAYER_TYPE_ICONS[type]) return "";
-  return `<span class="layer-type-icon" title="${type}">${LAYER_TYPE_ICONS[type]}</span>`;
+// CSS color string → "#rrggbb", or null when it can't be parsed (named
+// colors, gradients). getComputedStyle yields rgb()/rgba() forms; the SVG's
+// own attributes may carry #rgb / #rrggbb / #rrggbbaa.
+function colorToHex(c) {
+  if (!c) return null;
+  c = c.trim().toLowerCase();
+  let m = c.match(/^#([0-9a-f]{3})$/);
+  if (m) return "#" + m[1].split("").map((x) => x + x).join("");
+  if (/^#[0-9a-f]{6}$/.test(c)) return c;
+  if (/^#[0-9a-f]{8}$/.test(c)) return c.slice(0, 7);  // drop alpha
+  m = c.match(/^rgba?\(([^)]+)\)/);
+  if (m) {
+    const p = m[1].split(",").map((x) => x.trim());
+    if (p.length >= 3) {
+      return "#" + p.slice(0, 3).map((n) => {
+        const v = Math.max(0, Math.min(255, Math.round(parseFloat(n))));
+        return v.toString(16).padStart(2, "0");
+      }).join("");
+    }
+  }
+  return null;
+}
+
+// True for a color that actually paints something (not none/transparent/α0).
+function isPaintedColor(c) {
+  if (!c || c === "none" || c === "transparent") return false;
+  const m = c.match(/^rgba?\(([^)]+)\)/);
+  if (m) {
+    const p = m[1].split(",").map((x) => x.trim());
+    if (p.length === 4 && parseFloat(p[3]) === 0) return false;
+  }
+  return true;
+}
+
+const SWATCH_DRAW_SELECTOR = "path, line, polyline, polygon, circle, ellipse, rect";
+
+// Representative pen color of a layer <g> — its most common stroke color, or
+// null when nothing in it is stroked. A bounded sample keeps a huge SVG cheap.
+function resolveLayerColor(layerG) {
+  const els = layerG.querySelectorAll(SWATCH_DRAW_SELECTOR);
+  const limit = Math.min(els.length, 400);
+  const counts = new Map();
+  for (let i = 0; i < limit; i++) {
+    const stroke = getComputedStyle(els[i]).stroke;
+    if (isPaintedColor(stroke)) counts.set(stroke, (counts.get(stroke) || 0) + 1);
+  }
+  let best = null, bestN = 0;
+  for (const [c, n] of counts) if (n > bestN) { best = c; bestN = n; }
+  return best ? colorToHex(best) : null;
+}
+
+// Read the page + per-layer pen colors off the live preview SVG. Done once
+// per SVG — getComputedStyle resolves CSS classes and inheritance, so the
+// preview must already be in the DOM (renderPreview runs before renderLayers).
+// The pen color is a layer's stroke color; the page color is the SVG's own
+// CSS background. Results are cached on ctx.svg.
+function ensureSvgColors(card, ctx) {
+  if (!ctx || !ctx.svg || ctx.svg.colorsReady) return;
+  const svgRoot = card.querySelector(".paper-content svg");
+  if (!svgRoot) return;  // preview not in the DOM yet — retried next render
+  const bg = getComputedStyle(svgRoot).backgroundColor;
+  ctx.svg.pageColor = isPaintedColor(bg) ? colorToHex(bg) : null;
+  // Walk top-level layer groups in the same order as fetchSvgMeta so the
+  // running index lines up with ctx.svg.layers[].index.
+  const layerColors = {};
+  let index = 0;
+  for (const g of svgRoot.children) {
+    if (g.tagName.toLowerCase() !== "g") continue;
+    if (g.getAttribute("inkscape:groupmode") !== "layer") continue;
+    const c = resolveLayerColor(g);
+    if (c) layerColors[index] = c;
+    index++;
+  }
+  ctx.svg.layerColors = layerColors;
+  ctx.svg.colorsReady = true;
+}
+
+// A layer color swatch: the type icon — or a plain dot when the layer has no
+// type — drawn in the layer's pen color on a page-colored circle, mirroring
+// how that pen looks on that paper. `penHex`/`pageHex` are "#rrggbb" or null;
+// both fall back gracefully when the SVG carries no usable color.
+function layerSwatch(type, penHex, pageHex) {
+  const pen = penHex || "#9ca3af";   // neutral gray when no pen color found
+  const page = pageHex || "#ffffff";
+  const inner = (type && LAYER_TYPE_ICONS[type])
+    ? LAYER_TYPE_ICONS[type]
+    : `<span class="layer-swatch-dot"></span>`;
+  // Pen == page is an invisible plot; a faint halo keeps the icon legible.
+  const faint = penHex && pageHex && penHex === pageHex ? " faint" : "";
+  const title = penHex
+    ? `Pen color ${penHex}${type ? ` · ${type}` : ""}`
+    : (type || "");
+  return `<span class="layer-swatch${faint}" style="background:${page};color:${pen};"`
+    + (title ? ` title="${escapeHtml(title)}"` : "")
+    + `>${inner}</span>`;
 }
 
 // ───── Settings modal ────────────────────────────────────────────────────

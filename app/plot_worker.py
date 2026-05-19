@@ -232,16 +232,21 @@ def _stop_button_poll() -> None:
 
 # pyaxidraw wrappers -------------------------------------------------------
 
-def _run_stage(current_svg: Path, mode: str, job: dict) -> tuple[int, str]:
+def _run_stage(current_svg: Path, mode: str, job: dict,
+               stage: dict | None = None) -> tuple[int, str]:
     global _current_ad
     ad = axidraw.AxiDraw()
     try:
         ad.plot_setup(str(current_svg))
         ad.options.mode = mode
         ad.options.model = config.PLOTTER_MODEL
-        ad.options.speed_pendown = job["speed_pendown"]
-        ad.options.speed_penup = job["speed_penup"]
-        ad.options.accel = job["acceleration"]
+        # Per-stage speeds (a layer override resolved in _run_job) fall back to
+        # the job's document/system speeds — as does a stage-less call such as
+        # the calibration side-plot.
+        speeds = stage if stage is not None else {}
+        ad.options.speed_pendown = speeds.get("speed_pendown", job["speed_pendown"])
+        ad.options.speed_penup = speeds.get("speed_penup", job["speed_penup"])
+        ad.options.accel = speeds.get("acceleration", job["acceleration"])
         _current_ad = ad
         _start_position_poll()
         output_svg = ad.plot_run(output=True)
@@ -751,14 +756,34 @@ def _run_job(job_id: str) -> None:
     # when planning the plot.
     selections = [s for s in job["layer_selections"] if s.get("selected", True)]
     pause_between = job.get("pause_between_layers", True)
-    if pause_between and len(selections) > 1:
-        stages = [{"layer_indices": [s["index"]], "labels": [s["label"]], "status": "pending"}
-                  for s in selections]
+    _SPEED_KEYS = ("speed_pendown", "speed_penup", "acceleration")
+
+    def _stage_speeds(sel: dict) -> dict:
+        # A per-layer speed override falls back to the job's document/system
+        # speed for any axis it doesn't set.
+        return {k: sel.get(k, job[k]) for k in _SPEED_KEYS}
+
+    # A per-layer speed override only takes effect if its layer is plotted as
+    # its own stage (one plot_run = one speed set), so any override forces
+    # per-layer staging even when pause_between_layers is off.
+    has_speed_override = any(any(k in s for k in _SPEED_KEYS) for s in selections)
+    if len(selections) > 1 and (pause_between or has_speed_override):
+        stages = [{
+            "layer_indices": [s["index"]],
+            "labels": [s["label"]],
+            "status": "pending",
+            **_stage_speeds(s),
+        } for s in selections]
     else:
+        # One combined stage. Speeds can't vary within a single plot_run, so
+        # only a lone selected layer can still carry its own override.
+        speeds = (_stage_speeds(selections[0]) if len(selections) == 1
+                  else {k: job[k] for k in _SPEED_KEYS})
         stages = [{
             "layer_indices": [s["index"] for s in selections],
             "labels": [s["label"] for s in selections],
             "status": "pending",
+            **speeds,
         }]
 
     svg_path = _uploads() / f"{job['svg_id']}.svg"
@@ -855,7 +880,7 @@ def _run_staged_loop(job_id: str, svg_path: Path, first_mode: str) -> None:
                          plotting_started_at=time.time())
 
         try:
-            stopped, output_svg = _run_stage(current_svg, mode, job)
+            stopped, output_svg = _run_stage(current_svg, mode, job, stage)
         except IndexError:
             log.warning("plotink IndexError; treating as plotter-not-ready")
             state.update_job(job_id, status="failed",
@@ -869,7 +894,7 @@ def _run_staged_loop(job_id: str, svg_path: Path, first_mode: str) -> None:
                 _cancel_flag.clear()
                 state.update_job(job_id, status="homing", resume_path=str(resume_path))
                 try:
-                    _run_stage(resume_path, "res_home", job)
+                    _run_stage(resume_path, "res_home", job, stage)
                 except Exception:
                     log.exception("res_home failed")
                 state.update_job(job_id, status="cancelled", resume_path=None)
@@ -894,7 +919,7 @@ def _run_staged_loop(job_id: str, svg_path: Path, first_mode: str) -> None:
                         return
                     # homing
                     try:
-                        _run_stage(Path(current["resume_path"]), "res_home", job)
+                        _run_stage(Path(current["resume_path"]), "res_home", job, stage)
                     except Exception:
                         log.exception("res_home failed")
                     state.update_job(job_id, status="cancelled", resume_path=None)
