@@ -60,6 +60,9 @@ _SETTINGS: list[_Setting] = [
     _Setting("optimize_svg_reloop_default", bool, True),
     _Setting("display_unit", str, None,
              lambda v: v in ("mm", "cm", "in")),
+    # Last update the user chose to skip. The update banner stays hidden while
+    # this equals the latest remote version; a newer release re-shows it.
+    _Setting("skipped_version", str, None),
 ]
 
 # Static API key for /api/v1/* routes — kept outside the schema because it

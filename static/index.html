@@ -25,6 +25,21 @@
     </div>
   </header>
 
+  <div id="update-banner" class="update-banner" hidden>
+    <div class="update-banner-main">
+      <span class="update-banner-text">
+        Update available: <span id="update-from"></span> → <span id="update-to"></span>
+      </span>
+      <button id="update-details-btn" class="link-btn" type="button" aria-expanded="false">Details ▾</button>
+    </div>
+    <div class="update-banner-actions">
+      <button id="update-skip-btn" class="neutral" type="button">Skip</button>
+    </div>
+    <div id="update-details" class="update-banner-details muted" hidden>
+      Pulling the update and running the installer will be available soon.
+    </div>
+  </div>
+
   <div id="shutdown-modal" class="modal" hidden>
     <div class="modal-card">
       <h2>Shut down Raspberry Pi?</h2>
@@ -188,6 +203,20 @@
             <input id="settings-api-key" type="text" readonly />
             <button id="settings-api-key-copy" class="neutral" type="button">Copy</button>
           </div>
+        </div>
+      </section>
+
+      <section class="card-section collapsed" data-section="updates">
+        <header class="card-section-head">
+          <span class="card-section-title">About &amp; Updates</span>
+          <span class="card-section-caret" aria-hidden="true">▼</span>
+        </header>
+        <div class="card-section-body">
+          <div class="settings-update-row">
+            <span class="muted">Version <span id="settings-current-version"></span></span>
+            <span id="settings-update-pill" class="update-pill"></span>
+          </div>
+          <button id="settings-check-update" class="neutral" type="button">Check now</button>
         </div>
       </section>
 

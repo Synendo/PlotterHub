@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from . import config, optimize_queue, plan_queue, plot_worker, state, svg_utils
+from . import config, optimize_queue, plan_queue, plot_worker, state, svg_utils, updates
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -762,6 +762,33 @@ def patch_settings(req: SettingsUpdate):
 @app.get("/version")
 def get_version():
     return {"version": config.APP_VERSION}
+
+
+# Updates ----------------------------------------------------------------
+
+class UpdateSkip(BaseModel):
+    version: str
+
+
+@app.get("/update/status")
+def update_status():
+    return updates.get_status()
+
+
+@app.post("/update/check")
+def update_check():
+    return updates.get_status(force=True)
+
+
+@app.post("/update/skip")
+def update_skip(req: UpdateSkip):
+    # Only honour a skip for the version that's actually the latest, so a stale
+    # tab can't suppress a release the user hasn't seen yet.
+    status = updates.get_status()
+    if req.version != status["latest"]:
+        raise HTTPException(409, "skip version does not match latest remote version")
+    updates.skip(req.version)
+    return updates.get_status()
 
 
 @app.post("/system/shutdown")

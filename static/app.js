@@ -1829,6 +1829,7 @@ function connectWs() {
 connectWs();
 loadAppSettings();
 loadAppVersion();
+loadUpdateStatus();
 
 async function loadAppVersion() {
   try {
@@ -1839,6 +1840,82 @@ async function loadAppVersion() {
     if (el && data.version) el.textContent = data.version;
   } catch (e) {}
 }
+
+// ───── Update notice ─────────────────────────────────────────────────────
+
+let updateStatus = null;
+const updateBanner = $("update-banner");
+
+function renderUpdateStatus(status) {
+  updateStatus = status;
+
+  // Header banner: only when there's a newer version the user hasn't skipped.
+  const show = status && status.update_available && !status.skipped;
+  if (show) {
+    $("update-from").textContent = status.current;
+    $("update-to").textContent = status.latest;
+  }
+  updateBanner.hidden = !show;
+
+  // Settings "About & Updates" pill always reflects the latest known state.
+  const cur = $("settings-current-version");
+  if (cur) cur.textContent = status ? status.current : "";
+  const pill = $("settings-update-pill");
+  if (pill) {
+    if (!status || status.error) {
+      pill.textContent = "Check failed";
+      pill.className = "update-pill error";
+    } else if (status.update_available) {
+      pill.textContent = `Update available ↑ ${status.latest}`;
+      pill.className = "update-pill available";
+    } else {
+      pill.textContent = "Up to date ✓";
+      pill.className = "update-pill ok";
+    }
+  }
+}
+
+async function loadUpdateStatus() {
+  try {
+    const res = await fetch("/update/status");
+    if (!res.ok) return;
+    renderUpdateStatus(await res.json());
+  } catch (e) {}
+}
+
+$("update-skip-btn").addEventListener("click", async () => {
+  if (!updateStatus || !updateStatus.latest) return;
+  try {
+    const res = await fetch("/update/skip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: updateStatus.latest }),
+    });
+    if (res.ok) renderUpdateStatus(await res.json());
+  } catch (e) {}
+});
+
+$("update-details-btn").addEventListener("click", () => {
+  const details = $("update-details");
+  const open = details.hidden;
+  details.hidden = !open;
+  $("update-details-btn").setAttribute("aria-expanded", String(open));
+  $("update-details-btn").textContent = open ? "Details ▴" : "Details ▾";
+});
+
+$("settings-check-update").addEventListener("click", async () => {
+  const btn = $("settings-check-update");
+  btn.disabled = true;
+  btn.textContent = "Checking…";
+  try {
+    const res = await fetch("/update/check", { method: "POST" });
+    if (res.ok) renderUpdateStatus(await res.json());
+  } catch (e) {
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Check now";
+  }
+});
 
 window.addEventListener("resize", () => {
   cardEls.forEach((card, id) => {
