@@ -7,3 +7,7 @@ uploads/*
 .claude/
 config.json
 state.json
+update.log
+*.swp
+*.swo
+*~

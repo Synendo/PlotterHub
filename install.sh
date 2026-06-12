@@ -15,15 +15,32 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_NAME="plotterhub"
 UNIT_SRC="$PROJECT_DIR/systemd/$SERVICE_NAME.service"
 UNIT_DST="/etc/systemd/system/$SERVICE_NAME.service"
-SERVICE_USER="${USER:-$(whoami)}"
+REPO_URL="https://github.com/Synendo/PlotterHub.git"
+# The service runs as a specific non-root user. Normally that's whoever invokes
+# this script; the self-update path runs the script as root inside a transient
+# unit and passes the user in via SERVICE_USER (falling back to SUDO_USER).
+SERVICE_USER="${SERVICE_USER:-${SUDO_USER:-${USER:-$(whoami)}}}"
 MIN_PY_MAJOR=3
 MIN_PY_MINOR=11
 
 run_sudo() {
-    if [ -n "${SUDO_PW:-}" ]; then
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    elif [ -n "${SUDO_PW:-}" ]; then
         echo "$SUDO_PW" | sudo -S "$@"
     else
         sudo "$@"
+    fi
+}
+
+# Run a command as the service user. When this script is invoked as root (the
+# self-update path) the venv and pip must not be created root-owned, so drop
+# privileges; otherwise run directly.
+as_user() {
+    if [ "$(id -u)" -eq 0 ] && [ "$SERVICE_USER" != "root" ]; then
+        runuser -u "$SERVICE_USER" -- "$@"
+    else
+        "$@"
     fi
 }
 
@@ -81,12 +98,12 @@ run_sudo apt-get install -y python3 python3-venv python3-pip
 
 echo ">>> Creating Python virtualenv"
 if [ ! -d "$PROJECT_DIR/venv" ]; then
-    python3 -m venv "$PROJECT_DIR/venv"
+    as_user python3 -m venv "$PROJECT_DIR/venv"
 fi
 
 echo ">>> Installing Python dependencies"
-"$PROJECT_DIR/venv/bin/pip" install --upgrade pip wheel
-"$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
+as_user "$PROJECT_DIR/venv/bin/pip" install --upgrade pip wheel
+as_user "$PROJECT_DIR/venv/bin/pip" install -r "$PROJECT_DIR/requirements.txt"
 
 echo ">>> Installing systemd unit"
 run_sudo cp "$UNIT_SRC" "$UNIT_DST"
@@ -116,6 +133,28 @@ chmod 0440 "$SUDOERS_TMP"
 run_sudo visudo -cf "$SUDOERS_TMP" >/dev/null
 run_sudo install -m 0440 -o root -g root "$SUDOERS_TMP" "$SUDOERS_DST"
 rm -f "$SUDOERS_TMP"
+
+echo ">>> Installing self-update wrapper"
+# Root-owned wrapper at a fixed path (so the NOPASSWD grant can't be widened by
+# editing a repo file), with the project dir / user / repo baked in.
+WRAPPER_DST="/usr/local/sbin/plotterhub-update"
+WRAPPER_TMP="$(mktemp)"
+sed -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
+    -e "s|__SERVICE_USER__|$SERVICE_USER|g" \
+    -e "s|__REPO_URL__|$REPO_URL|g" \
+    "$PROJECT_DIR/scripts/plotterhub-update.in" > "$WRAPPER_TMP"
+run_sudo install -m 0755 -o root -g root "$WRAPPER_TMP" "$WRAPPER_DST"
+rm -f "$WRAPPER_TMP"
+
+echo ">>> Installing sudoers rule for self-update"
+UPD_SUDOERS_DST="/etc/sudoers.d/plotterhub-update"
+UPD_SUDOERS_TMP="$(mktemp)"
+printf '%s ALL=(root) NOPASSWD: %s "", %s --dry-run\n' \
+    "$SERVICE_USER" "$WRAPPER_DST" "$WRAPPER_DST" > "$UPD_SUDOERS_TMP"
+chmod 0440 "$UPD_SUDOERS_TMP"
+run_sudo visudo -cf "$UPD_SUDOERS_TMP" >/dev/null
+run_sudo install -m 0440 -o root -g root "$UPD_SUDOERS_TMP" "$UPD_SUDOERS_DST"
+rm -f "$UPD_SUDOERS_TMP"
 
 run_sudo systemctl daemon-reload
 run_sudo systemctl enable "$SERVICE_NAME"

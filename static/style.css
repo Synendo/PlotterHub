@@ -611,3 +611,28 @@ button.danger:hover:not(:disabled) { background: #CC4D4D; }
 .update-pill.ok { background: #66B366; color: #fff; }
 .update-pill.available { background: #FEC600; }
 .update-pill.error { background: #CC4D4D; color: #fff; }
+
+.update-changelog {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #444;
+  font-size: 0.85rem;
+}
+.update-changelog li { margin: 0.1rem 0; }
+.settings-update-actions { display: flex; gap: 0.5rem; }
+
+/* Update progress modal */
+.update-log {
+  background: #1a1a1a;
+  color: #e5e5e5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  padding: 0.75rem;
+  border-radius: 6px;
+  max-height: 45vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0.5rem 0;
+}

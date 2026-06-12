@@ -1854,6 +1854,7 @@ function renderUpdateStatus(status) {
   if (show) {
     $("update-from").textContent = status.current;
     $("update-to").textContent = status.latest;
+    renderChangelog(status.changelog);
   }
   updateBanner.hidden = !show;
 
@@ -1872,6 +1873,28 @@ function renderUpdateStatus(status) {
       pill.textContent = "Up to date ✓";
       pill.className = "update-pill ok";
     }
+  }
+  // Settings "Update now" is available whenever there's a newer version —
+  // including after the banner was skipped (the deferred-update path).
+  const sUpd = $("settings-update-now");
+  if (sUpd) sUpd.hidden = !(status && status.update_available);
+}
+
+function renderChangelog(changelog) {
+  const ul = $("update-changelog");
+  if (!ul) return;
+  ul.innerHTML = "";
+  if (!changelog || !changelog.length) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.textContent = "No change list available.";
+    ul.appendChild(li);
+    return;
+  }
+  for (const c of changelog) {
+    const li = document.createElement("li");
+    li.textContent = c.subject || c.hash;
+    ul.appendChild(li);
   }
 }
 
@@ -1916,6 +1939,108 @@ $("settings-check-update").addEventListener("click", async () => {
     btn.textContent = "Check now";
   }
 });
+
+$("update-now-btn").addEventListener("click", () => startUpdate(false));
+$("settings-update-now").addEventListener("click", () => {
+  settingsModal.hidden = true;
+  startUpdate(false);
+});
+$("update-progress-close").addEventListener("click", () => {
+  $("update-progress-modal").hidden = true;
+});
+
+// Kick off an update and follow it to completion. The service restarts
+// mid-flight, so we stream the wrapper's log and watch /version: when the app
+// comes back reporting the target version, we reload.
+async function startUpdate(dryRun) {
+  const target = updateStatus && updateStatus.latest;
+  const modal = $("update-progress-modal");
+  const title = $("update-progress-title");
+  const logEl = $("update-progress-log");
+  const statusEl = $("update-progress-status");
+  const closeBtn = $("update-progress-close");
+
+  title.textContent = dryRun ? "Update dry run…" : "Updating Plotter Hub…";
+  logEl.textContent = "";
+  statusEl.textContent = "Starting…";
+  statusEl.className = "muted";
+  closeBtn.hidden = true;
+  modal.hidden = false;
+
+  try {
+    const res = await fetch("/update/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: !!dryRun }),
+    });
+    if (!res.ok) throw new Error(await readErr(res));
+  } catch (e) {
+    statusEl.textContent = `Could not start update: ${e.message}`;
+    statusEl.className = "error";
+    closeBtn.hidden = false;
+    return;
+  }
+
+  const startedAt = Date.now();
+  const TIMEOUT_MS = 5 * 60 * 1000;
+  let sawDown = false;
+
+  const finish = (msg, isError) => {
+    statusEl.textContent = msg;
+    statusEl.className = isError ? "error" : "muted";
+    closeBtn.hidden = false;
+  };
+
+  const tick = async () => {
+    // Stream the wrapper log (may fail while the service is restarting).
+    try {
+      const r = await fetch("/update/log", { cache: "no-store" });
+      if (r.ok) {
+        const d = await r.json();
+        if (d.log) {
+          logEl.textContent = d.log;
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+        if (/update DONE \(dry run\)/.test(d.log)) {
+          finish("Dry run complete — no changes were applied.", false);
+          return;
+        }
+      } else {
+        sawDown = true;
+      }
+    } catch (e) {
+      sawDown = true; // service down during restart
+    }
+
+    // For a real update, completion = the app reappears on the new version.
+    if (!dryRun) {
+      try {
+        const r = await fetch("/version", { cache: "no-store" });
+        if (r.ok) {
+          const d = await r.json();
+          if (target && d.version === target) {
+            finish(`Updated to ${target}. Reloading…`, false);
+            setTimeout(() => location.reload(), 1500);
+            return;
+          }
+          if (sawDown) statusEl.textContent = "Service is back, finishing…";
+        } else {
+          sawDown = true;
+        }
+      } catch (e) {
+        sawDown = true;
+        statusEl.textContent = "Service restarting…";
+      }
+    }
+
+    if (Date.now() - startedAt > TIMEOUT_MS) {
+      finish("Update is taking longer than expected. Check update.log on the Pi.", true);
+      return;
+    }
+    setTimeout(tick, 1500);
+  };
+  setTimeout(tick, 1200);
+}
 
 window.addEventListener("resize", () => {
   cardEls.forEach((card, id) => {

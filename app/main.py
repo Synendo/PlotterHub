@@ -791,6 +791,36 @@ def update_skip(req: UpdateSkip):
     return updates.get_status()
 
 
+class UpdateApply(BaseModel):
+    dry_run: bool = False
+
+
+@app.get("/update/log")
+def update_log():
+    return {"log": updates.read_log()}
+
+
+@app.post("/update/apply")
+def update_apply(req: UpdateApply):
+    # Re-check against the remote so we never kick off a pointless reset/install.
+    status = updates.get_status(force=True)
+    if not status["update_available"]:
+        raise HTTPException(409, "already up to date")
+    # Never restart the service mid-plot — it would wreck the running job.
+    if state.snapshot()["status"] != "idle":
+        raise HTTPException(409, "cannot update while the plotter is busy")
+    # The wrapper does `git reset --hard`; refuse if there are local changes.
+    if not req.dry_run and updates.working_tree_dirty():
+        raise HTTPException(409, "working tree has local changes; refusing to update")
+    updates.launch(dry_run=req.dry_run)
+    return {
+        "started": True,
+        "dry_run": req.dry_run,
+        "target": status["latest"],
+        "changelog": status["changelog"],
+    }
+
+
 @app.post("/system/shutdown")
 async def system_shutdown():
     # Delay the halt so the HTTP response flushes to the client first. Requires

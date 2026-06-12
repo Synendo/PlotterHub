@@ -33,10 +33,23 @@
       <button id="update-details-btn" class="link-btn" type="button" aria-expanded="false">Details ▾</button>
     </div>
     <div class="update-banner-actions">
+      <button id="update-now-btn" class="primary" type="button">Update now</button>
       <button id="update-skip-btn" class="neutral" type="button">Skip</button>
     </div>
-    <div id="update-details" class="update-banner-details muted" hidden>
-      Pulling the update and running the installer will be available soon.
+    <div id="update-details" class="update-banner-details" hidden>
+      <ul id="update-changelog" class="update-changelog"></ul>
+    </div>
+  </div>
+
+  <div id="update-progress-modal" class="modal" hidden>
+    <div class="modal-card scrollable">
+      <h2 id="update-progress-title">Updating Plotter Hub…</h2>
+      <p class="muted">The service will restart and this page will reconnect automatically — please don't close this tab.</p>
+      <pre id="update-progress-log" class="update-log"></pre>
+      <div id="update-progress-status" class="muted"></div>
+      <div class="actions">
+        <button id="update-progress-close" class="neutral" hidden>Close</button>
+      </div>
     </div>
   </div>
 
@@ -216,7 +229,10 @@
             <span class="muted">Version <span id="settings-current-version"></span></span>
             <span id="settings-update-pill" class="update-pill"></span>
           </div>
-          <button id="settings-check-update" class="neutral" type="button">Check now</button>
+          <div class="settings-update-actions">
+            <button id="settings-check-update" class="neutral" type="button">Check now</button>
+            <button id="settings-update-now" class="primary" type="button" hidden>Update now</button>
+          </div>
         </div>
       </section>
 

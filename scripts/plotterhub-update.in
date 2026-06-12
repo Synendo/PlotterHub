@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Plotter Hub self-update wrapper.
+#
+# install.sh fills in the placeholders below and installs the result to
+# /usr/local/sbin/plotterhub-update (root-owned, 0755) together with a sudoers
+# rule that lets the service user run *this exact path* without a password.
+# The app launches it as:
+#     sudo -n /usr/local/sbin/plotterhub-update [--dry-run]
+#
+# Why the self re-exec via systemd-run: install.sh restarts the plotterhub
+# service, which would kill any child still living in the service's cgroup.
+# Re-launching inside a transient systemd unit moves the update into its own
+# cgroup so it survives the restart. All output is written to update.log, which
+# the UI polls to show progress and detect completion.
+set -euo pipefail
+
+PROJECT_DIR="__PROJECT_DIR__"
+SERVICE_USER="__SERVICE_USER__"
+REPO_URL="__REPO_URL__"
+BRANCH="main"
+LOG="$PROJECT_DIR/update.log"
+
+DRY_RUN=0
+[ "${1:-}" = "--dry-run" ] && DRY_RUN=1
+
+if [ "${PLOTTERHUB_UPDATE_DETACHED:-}" != "1" ]; then
+    # First entry (still in the service cgroup): detach into a transient unit.
+    exec systemd-run --collect --no-block \
+        --setenv=PLOTTERHUB_UPDATE_DETACHED=1 \
+        --setenv=PLOTTERHUB_UPDATE_DRY_RUN="$DRY_RUN" \
+        /usr/local/sbin/plotterhub-update
+fi
+
+DRY_RUN="${PLOTTERHUB_UPDATE_DRY_RUN:-0}"
+
+# --- detached context: runs as root in its own cgroup ---------------------
+exec >"$LOG" 2>&1
+echo "=== plotterhub update $(date -u +%FT%TZ) (dry_run=$DRY_RUN) ==="
+
+run_user() { runuser -u "$SERVICE_USER" -- "$@"; }
+
+echo ">>> fetching $BRANCH"
+run_user git -C "$PROJECT_DIR" fetch --quiet "$REPO_URL" "$BRANCH"
+TARGET="$(run_user git -C "$PROJECT_DIR" rev-parse --short FETCH_HEAD)"
+echo ">>> target commit $TARGET"
+echo ">>> changes:"
+run_user git -C "$PROJECT_DIR" --no-pager log --oneline --no-decorate HEAD..FETCH_HEAD || true
+
+if [ "$DRY_RUN" = "1" ]; then
+    echo "=== update DONE (dry run) — reset + install skipped ==="
+    exit 0
+fi
+
+echo ">>> resetting working tree to $TARGET"
+run_user git -C "$PROJECT_DIR" reset --hard FETCH_HEAD
+
+echo ">>> running installer"
+SERVICE_USER="$SERVICE_USER" "$PROJECT_DIR/install.sh"
+
+echo "=== update DONE $(date -u +%FT%TZ) ==="

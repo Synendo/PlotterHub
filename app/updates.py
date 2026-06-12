@@ -23,9 +23,15 @@ REPO_HTTPS_URL = "https://github.com/Synendo/PlotterHub.git"
 REMOTE_BRANCH = "main"
 CACHE_TTL_S = 3600  # don't hammer GitHub on every page poll
 
+# Root-owned wrapper installed by install.sh; the service user may run exactly
+# this path (and `--dry-run`) via passwordless sudo.
+WRAPPER_PATH = "/usr/local/sbin/plotterhub-update"
+UPDATE_LOG = config.BASE_DIR / "update.log"
+
 _cache_latest: str | None = None
 _cache_error: bool = False
 _cache_at: float = 0.0
+_cache_changelog: list[dict] = []
 
 
 def _parse(v: str | None) -> tuple[int, ...] | None:
@@ -68,10 +74,33 @@ def fetch_remote_version(timeout: float = 8.0) -> str | None:
         return None
 
 
+def _git(*args: str, timeout: float = 10.0) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(config.BASE_DIR), *args],
+        capture_output=True, text=True, timeout=timeout,
+    )
+
+
+def _compute_changelog() -> list[dict]:
+    """Commit subjects between the local HEAD and the just-fetched remote tip.
+    Relies on a preceding fetch having updated FETCH_HEAD."""
+    try:
+        out = _git("--no-pager", "log", "--oneline", "--no-decorate",
+                   "HEAD..FETCH_HEAD")
+    except (subprocess.SubprocessError, OSError):
+        return []
+    entries = []
+    for line in out.stdout.splitlines():
+        h, _, subject = line.partition(" ")
+        if h:
+            entries.append({"hash": h, "subject": subject})
+    return entries
+
+
 def get_status(force: bool = False) -> dict:
     """Cached update status. ``force=True`` (the "Check now" button) bypasses
     the TTL and re-fetches immediately."""
-    global _cache_latest, _cache_error, _cache_at
+    global _cache_latest, _cache_error, _cache_at, _cache_changelog
     now = time.time()
     if force or _cache_at == 0.0 or (now - _cache_at) >= CACHE_TTL_S:
         latest = fetch_remote_version()
@@ -80,6 +109,7 @@ def get_status(force: bool = False) -> dict:
         # doesn't flicker away when the network blips.
         if latest is not None:
             _cache_latest = latest
+            _cache_changelog = _compute_changelog()
         _cache_at = now
 
     current = config.APP_VERSION
@@ -89,6 +119,7 @@ def get_status(force: bool = False) -> dict:
         "latest": latest,
         "update_available": semver_gt(latest, current),
         "skipped": bool(latest) and latest == config.SKIPPED_VERSION,
+        "changelog": _cache_changelog,
         "checked_at": _cache_at,
         "error": _cache_error,
     }
@@ -98,3 +129,34 @@ def skip(version: str) -> None:
     """Remember that the user dismissed this version. The banner reappears only
     when a newer remote version shows up."""
     config.update(skipped_version=version)
+
+
+def working_tree_dirty() -> bool:
+    """True if the checkout has uncommitted changes (or we can't tell). The
+    apply path does `git reset --hard`, so refuse rather than clobber edits."""
+    try:
+        out = _git("status", "--porcelain")
+    except (subprocess.SubprocessError, OSError):
+        return True
+    return out.returncode != 0 or bool(out.stdout.strip())
+
+
+def read_log(max_bytes: int = 16384) -> str:
+    """Tail of the update log the wrapper writes; polled by the UI."""
+    try:
+        return UPDATE_LOG.read_text()[-max_bytes:]
+    except OSError:
+        return ""
+
+
+def launch(dry_run: bool = False) -> None:
+    """Fire-and-forget the update wrapper. It re-execs itself into a transient
+    systemd unit, so this child exits immediately and the work survives the
+    service restart."""
+    args = ["sudo", "-n", WRAPPER_PATH]
+    if dry_run:
+        args.append("--dry-run")
+    subprocess.Popen(
+        args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
