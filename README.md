@@ -1,4 +1,6 @@
-# Plotter Hub
+<p align="center">
+  <img src="static/plotter_hub_logo.svg" alt="Plotter Hub" width="360">
+</p>
 
 A self-hosted plot server for the iDraw H SE A3 and AxiDraw-class pen plotters. Submit SVGs over the network and the Pi drives the plotter locally via the official AxiDraw Python API, so your workstation doesn't need to stay connected for the duration of the plot.
 
