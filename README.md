@@ -48,10 +48,12 @@ I also had a look at [saxi](https://github.com/nornagon/saxi), but it didn't sup
 
 ## Requirements
 
-- Raspberry Pi 3B+ or newer running Raspberry Pi OS Trixie (Debian 13) or Bookworm (Debian 12)
+- Raspberry Pi Zero 2 W, 3B+, or newer running Raspberry Pi OS Trixie (Debian 13) or Bookworm (Debian 12)
 - An iDraw H SE A3, AxiDraw, or compatible EBB-based plotter on USB
 
-Tested on a Raspberry Pi 3 Model B running Raspberry Pi OS Lite (64-bit), a port of Debian Trixie with no desktop environment (released 2026-04-21).
+Tested on a Raspberry Pi 3 Model B and a Raspberry Pi Zero 2 W, both running Raspberry Pi OS Lite (64-bit) — a port of Debian Trixie with no desktop environment (released 2026-04-21).
+
+**Hardware notes:** both the Zero 2 W and the 3B+ are capable hosts — which one fits best depends on how you plot. The **Zero 2 W** draws the least power and is well suited to an always-on box; it boots and optimizes/plans a job roughly 40% slower than a **3B+**, but that overhead is negligible next to the plotting time itself. If you plot a lot and want snappier setup and preview times, the 3B+ is the more comfortable choice. There's little reason to go beyond it to a Pi 4 or 5 when this is the only thing running — the workload never uses the extra performance.
 
 `install.sh` checks these prerequisites and aborts with a hint if any are missing:
 
@@ -216,3 +218,4 @@ Never restart the service mid-plot — Python can't kill a thread, so a SIGTERM 
 ## License
 
 Released under the MIT License — see [LICENSE](LICENSE). Built around the AxiDraw Python API from Evil Mad Scientist (GPL-2.0), which is installed as a runtime dependency (not bundled) so this project's license is unaffected.
+1. 

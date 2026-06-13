@@ -793,6 +793,7 @@ def update_skip(req: UpdateSkip):
 
 class UpdateApply(BaseModel):
     dry_run: bool = False
+    force: bool = False
 
 
 @app.get("/update/log")
@@ -809,9 +810,17 @@ def update_apply(req: UpdateApply):
     # Never restart the service mid-plot — it would wreck the running job.
     if state.snapshot()["status"] != "idle":
         raise HTTPException(409, "cannot update while the plotter is busy")
-    # The wrapper does `git reset --hard`; refuse if there are local changes.
-    if not req.dry_run and updates.working_tree_dirty():
-        raise HTTPException(409, "working tree has local changes; refusing to update")
+    # The wrapper does `git reset --hard`, which overwrites tracked files. Refuse
+    # by default if any are locally modified, but let the UI confirm and retry
+    # with force=true (the structured detail lets it show what will be lost).
+    if not req.dry_run and not req.force:
+        dirty = updates.dirty_files()
+        if dirty:
+            raise HTTPException(409, detail={
+                "reason": "dirty",
+                "message": "the app folder has local changes",
+                "files": dirty,
+            })
     updates.launch(dry_run=req.dry_run)
     return {
         "started": True,

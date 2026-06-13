@@ -1923,10 +1923,29 @@ $("update-progress-close").addEventListener("click", () => {
   $("update-progress-modal").hidden = true;
 });
 
+// Confirm dialog shown when the app folder has local changes that the update
+// would overwrite. On confirm we retry the apply with force=true.
+let dirtyConfirmCallback = null;
+function openDirtyConfirm(files, onConfirm) {
+  dirtyConfirmCallback = onConfirm;
+  $("update-confirm-files").textContent = files.length ? files.join("\n") : "(unknown)";
+  $("update-confirm-modal").hidden = false;
+}
+$("update-confirm-cancel").addEventListener("click", () => {
+  $("update-confirm-modal").hidden = true;
+  dirtyConfirmCallback = null;
+});
+$("update-confirm-overwrite").addEventListener("click", () => {
+  $("update-confirm-modal").hidden = true;
+  const cb = dirtyConfirmCallback;
+  dirtyConfirmCallback = null;
+  if (cb) cb();
+});
+
 // Kick off an update and follow it to completion. The service restarts
 // mid-flight, so we stream the wrapper's log and watch /version: when the app
 // comes back reporting the target version, we reload.
-async function startUpdate(dryRun) {
+async function startUpdate(dryRun, force = false) {
   const target = updateStatus && updateStatus.latest;
   const modal = $("update-progress-modal");
   const title = $("update-progress-title");
@@ -1941,15 +1960,33 @@ async function startUpdate(dryRun) {
   closeBtn.hidden = true;
   modal.hidden = false;
 
+  let res;
   try {
-    const res = await fetch("/update/apply", {
+    res = await fetch("/update/apply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dry_run: !!dryRun }),
+      body: JSON.stringify({ dry_run: !!dryRun, force: !!force }),
     });
-    if (!res.ok) throw new Error(await readErr(res));
   } catch (e) {
     statusEl.textContent = `Could not start update: ${e.message}`;
+    statusEl.className = "error";
+    closeBtn.hidden = false;
+    return;
+  }
+  if (!res.ok) {
+    let detail = null;
+    try { detail = (await res.json()).detail; } catch {}
+    // Dirty working tree → offer to overwrite (unless we already forced).
+    if (res.status === 409 && detail && typeof detail === "object"
+        && detail.reason === "dirty" && !force) {
+      modal.hidden = true;
+      openDirtyConfirm(detail.files || [], () => startUpdate(dryRun, true));
+      return;
+    }
+    const msg = (detail && typeof detail === "object")
+      ? (detail.message || "update refused")
+      : (detail || res.statusText);
+    statusEl.textContent = `Could not start update: ${msg}`;
     statusEl.className = "error";
     closeBtn.hidden = false;
     return;

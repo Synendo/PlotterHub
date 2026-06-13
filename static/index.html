@@ -49,6 +49,18 @@
     </div>
   </div>
 
+  <div id="update-confirm-modal" class="modal" hidden>
+    <div class="modal-card">
+      <h2>Overwrite local changes?</h2>
+      <p class="muted">The app folder has local changes that will be replaced by the update. Your settings, job queue, and uploaded files are kept.</p>
+      <pre id="update-confirm-files" class="update-log"></pre>
+      <div class="actions">
+        <button id="update-confirm-cancel" class="neutral">Cancel</button>
+        <button id="update-confirm-overwrite" class="danger">Overwrite &amp; update</button>
+      </div>
+    </div>
+  </div>
+
   <div id="shutdown-modal" class="modal" hidden>
     <div class="modal-card">
       <h2>Shut down Raspberry Pi?</h2>
@@ -221,6 +233,7 @@
           <span class="card-section-caret" aria-hidden="true">▼</span>
         </header>
         <div class="card-section-body">
+          <p class="settings-update-name"><a href="https://github.com/Synendo/PlotterHub" target="_blank" rel="noopener">Plotter Hub</a></p>
           <div class="settings-update-row">
             <span class="muted">Version <span id="settings-current-version"></span></span>
             <span id="settings-update-pill" class="update-pill"></span>

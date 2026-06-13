@@ -112,14 +112,25 @@ def skip(version: str) -> None:
     config.update(skipped_version=version)
 
 
-def working_tree_dirty() -> bool:
-    """True if the checkout has uncommitted changes (or we can't tell). The
-    apply path does `git reset --hard`, so refuse rather than clobber edits."""
+def dirty_files() -> list[str]:
+    """Tracked files with local modifications (staged or unstaged). Untracked
+    files are deliberately ignored — `git reset --hard` doesn't touch them, so
+    they never block an update. Returns ``["<unknown>"]`` if git can't be
+    queried, so the caller still refuses rather than blindly clobbering. The
+    list is shown to the user before they confirm an overwrite."""
     try:
-        out = _git("status", "--porcelain")
+        out = _git("status", "--porcelain", "--untracked-files=no")
     except (subprocess.SubprocessError, OSError):
-        return True
-    return out.returncode != 0 or bool(out.stdout.strip())
+        return ["<unknown>"]
+    if out.returncode != 0:
+        return ["<unknown>"]
+    files = []
+    for line in out.stdout.splitlines():
+        # porcelain format is "XY <path>"; drop the 2 status chars + space.
+        path = line[3:].strip()
+        if path:
+            files.append(path)
+    return files
 
 
 def read_log(max_bytes: int = 16384) -> str:
