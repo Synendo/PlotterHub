@@ -27,6 +27,11 @@ CACHE_TTL_S = 3600  # don't hammer GitHub on every page poll
 # this path (and `--dry-run`) via passwordless sudo.
 WRAPPER_PATH = "/usr/local/sbin/plotterhub-update"
 UPDATE_LOG = config.BASE_DIR / "update.log"
+# The wrapper holds this lock for the duration of an update (it survives the
+# service restart). A crashed wrapper could leave it behind, so it's only
+# honoured while fresh.
+UPDATE_LOCK = config.BASE_DIR / "update.lock"
+UPDATE_LOCK_TTL_S = 900
 
 _cache_latest: str | None = None
 _cache_error: bool = False
@@ -131,6 +136,17 @@ def dirty_files() -> list[str]:
         if path:
             files.append(path)
     return files
+
+
+def update_in_progress() -> bool:
+    """True if an update is currently running. Backed by a lock the wrapper
+    creates on start and clears on exit; a stale lock from a killed wrapper is
+    ignored once older than the TTL so updates can't be blocked forever."""
+    try:
+        age = time.time() - UPDATE_LOCK.stat().st_mtime
+    except OSError:
+        return False
+    return age < UPDATE_LOCK_TTL_S
 
 
 def read_log(max_bytes: int = 16384) -> str:

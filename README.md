@@ -131,6 +131,10 @@ PLOTTER_MODEL=1 ./install.sh
 
 After install, the plotter model can also be changed from the UI (gear icon → Settings) and is persisted to `config.json`.
 
+### Network and access
+
+Plotter Hub has no built-in login — anyone who can reach its web port can upload, plot, change settings, update, or shut down the Pi. That's intentional for a trusted home LAN (like a network printer's web page), but it means you should **keep it on your local network and not port-forward it to the internet**. For remote access, put it behind a VPN such as [Tailscale](https://tailscale.com/) or WireGuard rather than exposing it directly. The `X-API-Key` only guards the `/api/v1/*` endpoints and is itself readable on the LAN — it's a scripting convenience, not a security boundary.
+
 ## Updating
 
 Plotter Hub can update itself from the web UI, or you can update manually over ssh. The UI path is the convenient one — no terminal needed.
@@ -143,9 +147,11 @@ When a newer version is published on `main`, a banner appears at the top of the 
 - **Skip** hides the banner for that version; it comes back only when a *newer* version is released. You can still start the update later from Settings (the skip just suppresses the banner).
 - The check queries the public GitHub repo over HTTPS (no credentials needed) and is cached for an hour, so a freshly published release may not show immediately — **Check now** forces a fresh check.
 
-Updates are **refused while a plot is running** and **if the working tree has local changes** (so a manual edit on the Pi is never clobbered) — wait until the queue is idle.
+Updates are **refused while a plot is running** (wait until the queue is idle), and a second update can't start while one is already in progress. If the app folder has **local changes**, the update asks you to confirm before overwriting them — your settings, job queue, and uploads are always kept (they're gitignored, so `git reset` never touches them).
 
 Under the hood: `install.sh` installs a small root-owned helper at `/usr/local/sbin/plotterhub-update` with a scoped NOPASSWD sudoers rule. When triggered it re-launches itself in a transient systemd unit so it survives the service restart, runs `git reset --hard` to the latest `main`, then re-runs `install.sh`. All output is written to `update.log`.
+
+If an update doesn't come back up, the cause is usually in `update.log` (or `journalctl -u plotterhub -n 50`); ssh in and re-run `./install.sh` to recover.
 
 ### Manually over ssh
 
@@ -157,7 +163,7 @@ git pull
 ./install.sh
 ```
 
-`install.sh` is idempotent, so re-running it is the upgrade path — `apt` skips satisfied packages, `pip` only installs requirements that changed, and the systemd unit is re-templated and restarted. Your `config.json`, `state.json`, and everything under `uploads/` is gitignored and preserved across upgrades; the job queue rehydrates on service start.
+`install.sh` is idempotent, so re-running it is the upgrade path — `apt` skips satisfied packages, `pip` only installs requirements that changed, and the systemd unit is re-templated and restarted. Your `config.json`, `state.json`, and everything under `uploads/` is gitignored and preserved across upgrades; the job queue rehydrates on service start. Uploaded SVGs accumulate in `uploads/` over time — enable *Delete on complete* in Settings, or clear old files periodically, so a small SD card doesn't fill up.
 
 Before upgrading (either way), it's cleanest to wait until the queue is idle (or the active job is `paused` / `awaiting_pen_change`). If you do upgrade mid-plot via the manual path, the graceful-shutdown handler pauses the active job and queue persistence restores it as a resumable paused job on the next start.
 

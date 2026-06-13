@@ -601,7 +601,14 @@ button.danger:hover:not(:disabled) { background: #CC4D4D; }
 .update-pill.available { background: #FEC600; }
 .update-pill.error { background: #CC4D4D; color: #fff; }
 
-.settings-update-name { margin: 0 0 0.4rem; font-weight: 600; }
+.settings-update-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.settings-update-name { margin: 0; font-weight: 600; }
+.settings-update-name a { color: #00B7FE; }
 .settings-update-actions { display: flex; gap: 0.5rem; }
 
 /* Update progress modal */

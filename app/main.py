@@ -13,7 +13,7 @@ from fastapi import (
     Depends, FastAPI, File, Form, Header, HTTPException,
     UploadFile, WebSocket, WebSocketDisconnect,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
@@ -63,7 +63,11 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.get("/")
 def index():
-    return FileResponse(str(STATIC_DIR / "index.html"))
+    # Stamp the running version onto the asset URLs so a browser always fetches
+    # fresh app.js / style.css after a self-update instead of serving a stale
+    # cached copy. Read per request so static edits show up without a restart.
+    html = (STATIC_DIR / "index.html").read_text()
+    return HTMLResponse(html.replace("__ASSET_VERSION__", config.APP_VERSION))
 
 
 # SVG storage -------------------------------------------------------------
@@ -807,6 +811,9 @@ def update_apply(req: UpdateApply):
     status = updates.get_status(force=True)
     if not status["update_available"]:
         raise HTTPException(409, "already up to date")
+    # Don't launch a second updater on top of a running one (e.g. a double-click).
+    if updates.update_in_progress():
+        raise HTTPException(409, "an update is already in progress")
     # Never restart the service mid-plot — it would wreck the running job.
     if state.snapshot()["status"] != "idle":
         raise HTTPException(409, "cannot update while the plotter is busy")

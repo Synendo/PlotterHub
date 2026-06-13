@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <title>Plotter Hub</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=__ASSET_VERSION__" />
 </head>
 <body>
   <header>
@@ -233,10 +233,12 @@
           <span class="card-section-caret" aria-hidden="true">▼</span>
         </header>
         <div class="card-section-body">
-          <p class="settings-update-name"><a href="https://github.com/Synendo/PlotterHub" target="_blank" rel="noopener">Plotter Hub</a></p>
+          <div class="settings-update-head">
+            <p class="settings-update-name"><a href="https://github.com/Synendo/PlotterHub" target="_blank" rel="noopener">Plotter Hub</a></p>
+            <span id="settings-update-pill" class="update-pill"></span>
+          </div>
           <div class="settings-update-row">
             <span class="muted">Version <span id="settings-current-version"></span></span>
-            <span id="settings-update-pill" class="update-pill"></span>
           </div>
           <div class="settings-update-actions">
             <button id="settings-check-update" class="neutral" type="button">Check now</button>
@@ -540,6 +542,6 @@
     </article>
   </template>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=__ASSET_VERSION__"></script>
 </body>
 </html>

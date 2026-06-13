@@ -35,6 +35,12 @@ DRY_RUN="${PLOTTERHUB_UPDATE_DRY_RUN:-0}"
 
 # --- detached context: runs as root in its own cgroup ---------------------
 exec >"$LOG" 2>&1
+# Hold a lock for the whole run so the app rejects a second update on top of
+# this one. Cleared on any exit (success, error, or dry-run), surviving the
+# service restart in between.
+LOCK="$PROJECT_DIR/update.lock"
+trap 'rm -f "$LOCK"' EXIT
+: > "$LOCK"
 echo "=== plotterhub update $(date -u +%FT%TZ) (dry_run=$DRY_RUN) ==="
 
 run_user() { runuser -u "$SERVICE_USER" -- "$@"; }

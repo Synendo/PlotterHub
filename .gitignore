@@ -8,6 +8,7 @@ uploads/*
 config.json
 state.json
 update.log
+update.lock
 *.swp
 *.swo
 *~
