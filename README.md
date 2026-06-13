@@ -36,6 +36,7 @@ I also had a look at [saxi](https://github.com/nornagon/saxi), but it didn't sup
 **Operational**
 
 - Runs as a systemd service under the user who invoked `install.sh`
+- In-app self-update: checks GitHub for new releases and updates with one click (Settings → About & Updates), guarded so it never runs mid-plot or over local changes
 - Plot worker runs in a thread; preview runs in a subprocess (cancel-killable)
 - In-memory preview cache — same SVG + same params skips the ~20–30s planning pass
 - Graceful shutdown on service stop: pauses any in-flight plot so the pen is raised and the resume SVG is flushed
@@ -78,10 +79,12 @@ Tested on a Raspberry Pi 3 Model B running Raspberry Pi OS Lite (64-bit), a port
 
 - `/etc/systemd/system/plotterhub.service` — templated from `systemd/plotterhub.service` with the invoking user and the repo path
 - `/etc/sudoers.d/plotterhub-shutdown` — grants the service user NOPASSWD on `/sbin/shutdown` so the UI's shutdown button works
+- `/usr/local/sbin/plotterhub-update` — root-owned self-update helper invoked by the UI's "Update now" button (templated from `scripts/plotterhub-update.in`)
+- `/etc/sudoers.d/plotterhub-update` — grants the service user NOPASSWD on just that helper
 
 ### Assumed already present on Raspberry Pi OS
 
-The script relies on these but does not install them: `sudo`, `apt`, `systemctl`, `ss` (from `iproute2`), `install`, `visudo`. They ship with any stock Raspberry Pi OS install.
+The script relies on these but does not install them: `sudo`, `apt`, `systemctl`, `ss` (from `iproute2`), `install`, `visudo`, plus `git`, `runuser`, and `systemd-run` (used by the self-update path). They ship with any stock Raspberry Pi OS install.
 
 ## Install
 
@@ -128,6 +131,22 @@ After install, the plotter model can also be changed from the UI (gear icon → 
 
 ## Updating
 
+Plotter Hub can update itself from the web UI, or you can update manually over ssh. The UI path is the convenient one — no terminal needed.
+
+### From the UI (recommended)
+
+When a newer version is published on `main`, a banner appears at the top of the page — **Update available: `<current>` → `<latest>`** — with **Update now** and **Skip**. The same controls, plus the current version, an availability badge, and a **Check now** button, live under **Settings → About & Updates**.
+
+- **Update now** pulls the latest version, re-runs `install.sh`, and restarts the service. The installer log streams live in a dialog and the page reconnects on its own once the new version is up (don't close the tab — it takes a minute or two).
+- **Skip** hides the banner for that version; it comes back only when a *newer* version is released. You can still start the update later from Settings (the skip just suppresses the banner).
+- The check queries the public GitHub repo over HTTPS (no credentials needed) and is cached for an hour, so a freshly published release may not show immediately — **Check now** forces a fresh check.
+
+Updates are **refused while a plot is running** and **if the working tree has local changes** (so a manual edit on the Pi is never clobbered) — wait until the queue is idle.
+
+Under the hood: `install.sh` installs a small root-owned helper at `/usr/local/sbin/plotterhub-update` with a scoped NOPASSWD sudoers rule. When triggered it re-launches itself in a transient systemd unit so it survives the service restart, runs `git reset --hard` to the latest `main`, then re-runs `install.sh`. All output is written to `update.log`.
+
+### Manually over ssh
+
 ssh to the Pi, pull the latest version of the repository and re-run the installer:
 
 ```bash
@@ -138,7 +157,7 @@ git pull
 
 `install.sh` is idempotent, so re-running it is the upgrade path — `apt` skips satisfied packages, `pip` only installs requirements that changed, and the systemd unit is re-templated and restarted. Your `config.json`, `state.json`, and everything under `uploads/` is gitignored and preserved across upgrades; the job queue rehydrates on service start.
 
-Before upgrading, it's cleanest to wait until the queue is idle (or the active job is `paused` / `awaiting_pen_change`). If you do upgrade mid-plot, the graceful-shutdown handler pauses the active job and queue persistence restores it as a resumable paused job on the next start.
+Before upgrading (either way), it's cleanest to wait until the queue is idle (or the active job is `paused` / `awaiting_pen_change`). If you do upgrade mid-plot via the manual path, the graceful-shutdown handler pauses the active job and queue persistence restores it as a resumable paused job on the next start.
 
 ## Architecture
 
@@ -166,8 +185,10 @@ app/
   svg_utils.py      # Inkscape-layer parsing, filter, paper transform
   state.py          # in-memory state + WebSocket broadcast
   config.py         # plotter model config, persisted to config.json
+  updates.py        # self-update: remote version check + guarded apply
 static/             # index.html, app.js, style.css
 systemd/            # plotterhub.service (template)
+scripts/            # plotterhub-update.in (self-update helper template)
 install.sh          # idempotent installer
 uploads/            # gitignored; uploaded SVGs and per-stage filtered / resume files
 ```
