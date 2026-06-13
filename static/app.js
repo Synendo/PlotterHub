@@ -1854,7 +1854,6 @@ function renderUpdateStatus(status) {
   if (show) {
     $("update-from").textContent = status.current;
     $("update-to").textContent = status.latest;
-    renderChangelog(status.changelog);
   }
   updateBanner.hidden = !show;
 
@@ -1867,7 +1866,7 @@ function renderUpdateStatus(status) {
       pill.textContent = "Check failed";
       pill.className = "update-pill error";
     } else if (status.update_available) {
-      pill.textContent = `Update available ↑ ${status.latest}`;
+      pill.textContent = `Available: version ${status.latest}`;
       pill.className = "update-pill available";
     } else {
       pill.textContent = "Up to date ✓";
@@ -1878,24 +1877,6 @@ function renderUpdateStatus(status) {
   // including after the banner was skipped (the deferred-update path).
   const sUpd = $("settings-update-now");
   if (sUpd) sUpd.hidden = !(status && status.update_available);
-}
-
-function renderChangelog(changelog) {
-  const ul = $("update-changelog");
-  if (!ul) return;
-  ul.innerHTML = "";
-  if (!changelog || !changelog.length) {
-    const li = document.createElement("li");
-    li.className = "muted";
-    li.textContent = "No change list available.";
-    ul.appendChild(li);
-    return;
-  }
-  for (const c of changelog) {
-    const li = document.createElement("li");
-    li.textContent = c.subject || c.hash;
-    ul.appendChild(li);
-  }
 }
 
 async function loadUpdateStatus() {
@@ -1918,13 +1899,6 @@ $("update-skip-btn").addEventListener("click", async () => {
   } catch (e) {}
 });
 
-$("update-details-btn").addEventListener("click", () => {
-  const details = $("update-details");
-  const open = details.hidden;
-  details.hidden = !open;
-  $("update-details-btn").setAttribute("aria-expanded", String(open));
-  $("update-details-btn").textContent = open ? "Details ▴" : "Details ▾";
-});
 
 $("settings-check-update").addEventListener("click", async () => {
   const btn = $("settings-check-update");

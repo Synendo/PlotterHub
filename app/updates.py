@@ -31,7 +31,6 @@ UPDATE_LOG = config.BASE_DIR / "update.log"
 _cache_latest: str | None = None
 _cache_error: bool = False
 _cache_at: float = 0.0
-_cache_changelog: list[dict] = []
 
 
 def _parse(v: str | None) -> tuple[int, ...] | None:
@@ -81,26 +80,10 @@ def _git(*args: str, timeout: float = 10.0) -> subprocess.CompletedProcess:
     )
 
 
-def _compute_changelog() -> list[dict]:
-    """Commit subjects between the local HEAD and the just-fetched remote tip.
-    Relies on a preceding fetch having updated FETCH_HEAD."""
-    try:
-        out = _git("--no-pager", "log", "--oneline", "--no-decorate",
-                   "HEAD..FETCH_HEAD")
-    except (subprocess.SubprocessError, OSError):
-        return []
-    entries = []
-    for line in out.stdout.splitlines():
-        h, _, subject = line.partition(" ")
-        if h:
-            entries.append({"hash": h, "subject": subject})
-    return entries
-
-
 def get_status(force: bool = False) -> dict:
     """Cached update status. ``force=True`` (the "Check now" button) bypasses
     the TTL and re-fetches immediately."""
-    global _cache_latest, _cache_error, _cache_at, _cache_changelog
+    global _cache_latest, _cache_error, _cache_at
     now = time.time()
     if force or _cache_at == 0.0 or (now - _cache_at) >= CACHE_TTL_S:
         latest = fetch_remote_version()
@@ -109,7 +92,6 @@ def get_status(force: bool = False) -> dict:
         # doesn't flicker away when the network blips.
         if latest is not None:
             _cache_latest = latest
-            _cache_changelog = _compute_changelog()
         _cache_at = now
 
     current = config.APP_VERSION
@@ -119,7 +101,6 @@ def get_status(force: bool = False) -> dict:
         "latest": latest,
         "update_available": semver_gt(latest, current),
         "skipped": bool(latest) and latest == config.SKIPPED_VERSION,
-        "changelog": _cache_changelog,
         "checked_at": _cache_at,
         "error": _cache_error,
     }

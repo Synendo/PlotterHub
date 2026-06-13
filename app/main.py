@@ -817,7 +817,6 @@ def update_apply(req: UpdateApply):
         "started": True,
         "dry_run": req.dry_run,
         "target": status["latest"],
-        "changelog": status["changelog"],
     }
 
 

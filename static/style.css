@@ -581,17 +581,6 @@ button.danger:hover:not(:disabled) { background: #CC4D4D; }
 .update-banner-main { display: flex; align-items: center; gap: 0.6rem; flex: 1 1 auto; }
 .update-banner-text { font-weight: 500; }
 .update-banner-actions { display: flex; gap: 0.5rem; }
-.update-banner-details { flex-basis: 100%; margin-top: 0; }
-.link-btn {
-  background: transparent;
-  border: 0;
-  color: #0a7ea4;
-  cursor: pointer;
-  padding: 0;
-  font-size: 0.85rem;
-  text-decoration: underline;
-}
-.link-btn:hover { color: #00B7FE; }
 
 /* ───── Settings: About & Updates ───── */
 .settings-update-row {
@@ -612,13 +601,6 @@ button.danger:hover:not(:disabled) { background: #CC4D4D; }
 .update-pill.available { background: #FEC600; }
 .update-pill.error { background: #CC4D4D; color: #fff; }
 
-.update-changelog {
-  margin: 0;
-  padding-left: 1.1rem;
-  color: #444;
-  font-size: 0.85rem;
-}
-.update-changelog li { margin: 0.1rem 0; }
 .settings-update-actions { display: flex; gap: 0.5rem; }
 
 /* Update progress modal */
