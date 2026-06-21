@@ -261,7 +261,7 @@ h2 { font-size: 1rem; margin: 0 0 0.5rem 0; color: #666; }
 }
 .plot-info div { display: flex; justify-content: space-between; gap: 0.5rem; }
 .plot-info span { color: #666; }
-.plot-info strong { color: #222; font-weight: 600; }
+.plot-info strong { color: #222; font-weight: 600; white-space: nowrap; }
 
 .progress { margin-top: 0.75rem; }
 .progress-bar {
