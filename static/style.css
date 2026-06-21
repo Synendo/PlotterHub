@@ -522,6 +522,8 @@ label.inline-check input[type="checkbox"] { margin: 0; }
 .form-row[hidden] { display: none; }
 .field { display: flex; flex-direction: column; flex: 1; min-width: 120px; font-size: 0.85rem; color: #666; }
 .field .field-label { margin-bottom: 0.25rem; }
+/* Space stacked pickers within the Language & Units section. */
+[data-section="localization"] .card-section-body .field + .field { margin-top: 0.75rem; }
 .field select, .field input, .margin-grid input, .slider-row input[type="number"] {
   padding: 0 0.6rem;
   height: 2.35rem;

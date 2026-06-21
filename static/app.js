@@ -18,24 +18,8 @@ const cancelBtn = $("cancel-btn");
 const jobCardTemplate = $("job-card-template");
 const queueProgress = $("queue-progress");
 
-const STATUS_LABELS = {
-  idle: "Idle",
-  queued: "Queued",
-  awaiting_optimize: "Waiting to optimize",
-  optimizing: "Optimizing",
-  planning: "Planning",
-  plotting: "Plotting",
-  plotting_calibration: "Plotting calibration",
-  paused: "Paused",
-  awaiting_pen_change: "Awaiting pen change",
-  awaiting_next_job: "Awaiting next job",
-  homing: "Homing",
-  completed: "Completed",
-  failed: "Failed",
-  cancelled: "Cancelled",
-};
 function statusLabel(key) {
-  return STATUS_LABELS[key] || key;
+  return t(`status.${key}`);
 }
 
 let appSettings = {
@@ -118,15 +102,24 @@ const cardEls = new Map();                 // job_id → card DOM element
 const cardCtx = new Map();                 // job_id → per-card state (svg metadata, manual-fit flag, render timer)
 let sharedElapsedTimer = null;             // single interval for the sticky-bar progress
 
-const DROP_ZONE_DEFAULT_TEXT = "Drop SVGs here (or click) to add to the queue";
+// Turn a FastAPI error `detail` into a display string. Coded errors arrive as
+// {code, params} and are localized via the apierror.* catalog; plain-string
+// and structured-message details fall through to their text.
+function apiErrText(detail) {
+  if (detail && typeof detail === "object") {
+    if (detail.code) return t(`apierror.${detail.code}`, detail.params || {});
+    if (detail.message) return detail.message;
+  }
+  return detail != null ? String(detail) : "";
+}
 
 // Pull a readable message out of a fetch Response. FastAPI errors look like
-// {"detail":"..."}; plain text is passed through unchanged.
+// {"detail": ...}; plain text is passed through unchanged.
 async function readErr(res) {
   const text = await res.text();
   try {
     const data = JSON.parse(text);
-    if (data && typeof data === "object" && data.detail) return String(data.detail);
+    if (data && typeof data === "object" && data.detail != null) return apiErrText(data.detail);
   } catch {}
   return text;
 }
@@ -162,8 +155,8 @@ function handleDroppedFiles(fileList) {
   const bad = files.filter((f) => !isSvgFile(f));
   if (bad.length) {
     uploadError.textContent = bad.length === 1
-      ? `${bad[0].name} is not an SVG file.`
-      : `${bad.length} files were skipped — only .svg files are accepted.`;
+      ? t("upload.not_svg", { name: bad[0].name })
+      : t("upload.files_skipped", { count: bad.length });
     uploadError.hidden = false;
   } else {
     uploadError.hidden = true;
@@ -177,7 +170,7 @@ async function uploadAndQueue(file) {
   uploadError.hidden = true;
   uploadError.textContent = "";
   dropZone.classList.add("loading");
-  label.textContent = `Processing ${file.name}…`;
+  label.textContent = t("upload.processing", { name: file.name });
   const fd = new FormData();
   fd.append("file", file);
   try {
@@ -189,7 +182,7 @@ async function uploadAndQueue(file) {
     // re-dropping the same file gives a clean reset, regardless of labels.
     const layer_selections = svg.layers.map((l) => ({ index: l.index, label: l.label }));
     if (layer_selections.length === 0) {
-      throw new Error("This SVG doesn't contain any Inkscape layers. Open it in Inkscape, add at least one layer, and export again.");
+      throw new Error(t("upload.no_layers"));
     }
 
     // Auto-detect paper
@@ -235,11 +228,11 @@ async function uploadAndQueue(file) {
     // The card gets created when the WebSocket state update arrives;
     // createCardForJob will fetch the SVG text via /svg/{id} itself.
   } catch (e) {
-    uploadError.textContent = `Upload failed: ${e.message}`;
+    uploadError.textContent = t("upload.failed", { message: e.message });
     uploadError.hidden = false;
   } finally {
     dropZone.classList.remove("loading");
-    label.textContent = DROP_ZONE_DEFAULT_TEXT;
+    label.textContent = t("upload.drop_hint");
   }
 }
 
@@ -372,6 +365,9 @@ function createCardForJob(job) {
   const frag = jobCardTemplate.content.cloneNode(true);
   const card = frag.querySelector(".job-card");
   card.dataset.id = job.job_id;
+  // Cards are cloned from a <template> after I18N.init()'s one-time pass, so
+  // translate this card's static labels now.
+  I18N.applyStatic(card);
 
   // Clamp typed-in number values when the user leaves the field. We hook
   // both `focusout` (fires on blur, before change) and `change` in capture
@@ -578,7 +574,7 @@ async function fetchSvgMeta(svg_id) {
       if (child.tagName.toLowerCase() !== "g") continue;
       const mode = child.getAttribute("inkscape:groupmode");
       if (mode !== "layer") continue;
-      const label = child.getAttribute("inkscape:label") || `Layer ${index + 1}`;
+      const label = child.getAttribute("inkscape:label") || t("layer.default_label", { n: index + 1 });
       layers.push({ index, label, addressable: !!label && /^\d/.test(label) });
       index++;
     }
@@ -625,7 +621,7 @@ function guessPresetFromDims(w, h) {
 }
 
 function setCaretTooltip(caret, isExpanded) {
-  if (caret) caret.title = isExpanded ? "Collapse" : "Expand";
+  if (caret) caret.title = isExpanded ? t("a11y.collapse") : t("a11y.expand");
 }
 
 function syncSectionCaret(section) {
@@ -685,7 +681,7 @@ function updateCard(card, job) {
   const subParts = [paperLabel];
   const layerCount = (job.layer_selections || []).filter((s) => s.selected !== false).length;
   if (layerCount) {
-    subParts.push(`${layerCount} layer${layerCount > 1 ? "s" : ""}`);
+    subParts.push(tn("job.layers", layerCount));
   }
   if (job.estimated_total_seconds) subParts.push(formatDuration(Math.round(job.estimated_total_seconds)));
   // Surface the SVG-level pre-optimize state on queued cards so the user knows
@@ -693,14 +689,14 @@ function updateCard(card, job) {
   // optimize queue.
   if (job.status === "queued" && job.optimize_svg) {
     const svgInfo = (serverState.svgs || {})[job.svg_id];
-    if (svgInfo && svgInfo.status === "optimizing") subParts.push("optimizing SVG…");
-    else if (svgInfo && svgInfo.status === "pending") subParts.push("waiting to optimize SVG…");
+    if (svgInfo && svgInfo.status === "optimizing") subParts.push(t("job.optimizing_svg"));
+    else if (svgInfo && svgInfo.status === "pending") subParts.push(t("job.waiting_optimize_svg"));
   }
   // And the background-planning state, so the user knows whether the plot
   // click will be instant or still has to compute the estimate.
   if (job.status === "queued" &&
       (job.plan_status === "pending" || job.plan_status === "planning")) {
-    subParts.push(job.plan_status === "planning" ? "planning…" : "waiting to plan…");
+    subParts.push(job.plan_status === "planning" ? t("job.planning") : t("job.waiting_plan"));
   }
   card.querySelector(".job-sub").textContent = subParts.join(" · ");
 
@@ -1096,6 +1092,13 @@ function renderLayers(card, job) {
   card.querySelector(".multi-layer-options").hidden = selectedCount < 2;
 }
 
+// Per-stage status is a fixed small set; translate the known ones and fall
+// back to the raw value for anything unexpected.
+const STAGE_STATUS_KEYS = { pending: 1, current: 1, done: 1 };
+function stageStatusLabel(st) {
+  return STAGE_STATUS_KEYS[st] ? t(`stage_status.${st}`) : st;
+}
+
 function renderStages(card, job) {
   const wrap = card.querySelector(".stages-wrap");
   const ol = card.querySelector(".stages");
@@ -1121,7 +1124,7 @@ function renderStages(card, job) {
     li.innerHTML = `<span class="stage-num">${i + 1}</span>
       ${icons}
       <span class="stage-label">${escapeHtml((s.labels || []).join(", "))}</span>
-      <span class="stage-status">${s.status}</span>`;
+      <span class="stage-status">${escapeHtml(stageStatusLabel(s.status))}</span>`;
     ol.appendChild(li);
   });
 }
@@ -1236,7 +1239,7 @@ async function sendCardUpdate(card, immediateUpdates) {
 async function deleteJob(id) {
   const res = await fetch(`/jobs/${id}`, { method: "DELETE" });
   if (!res.ok) {
-    topMessage.textContent = `Cannot delete: ${await readErr(res)}`;
+    topMessage.textContent = t("error.cannot_delete", { message: await readErr(res) });
     topMessage.className = "error";
   }
 }
@@ -1246,7 +1249,7 @@ async function requeueJob(id) {
     const res = await fetch(`/jobs/${id}/requeue`, { method: "POST" });
     if (!res.ok) throw new Error(await readErr(res));
   } catch (e) {
-    topMessage.textContent = `Re-queue failed: ${e.message}`;
+    topMessage.textContent = t("error.requeue_failed", { message: e.message });
     topMessage.className = "error";
   }
 }
@@ -1278,7 +1281,7 @@ async function postAction(path) {
     const res = await fetch(path, { method: "POST" });
     if (!res.ok) throw new Error(await readErr(res));
   } catch (e) {
-    topMessage.textContent = `Request failed: ${e.message}`;
+    topMessage.textContent = t("error.request_failed", { message: e.message });
     topMessage.className = "error";
   }
 }
@@ -1292,7 +1295,7 @@ function applyTopControls() {
   pauseBtn.hidden = !active || status !== "plotting";
   pausePenUpBtn.hidden = !active || status !== "plotting";
   const penUpPending = !!s.pause_at_pen_up_pending;
-  pausePenUpBtn.textContent = penUpPending ? "Pausing at pen lift…" : "Pause at Pen Lift";
+  pausePenUpBtn.textContent = penUpPending ? t("controls.pausing_pen_up") : t("controls.pause_pen_up");
   pausePenUpBtn.disabled = penUpPending;
   resumeBtn.hidden = !active || status !== "paused";
   continueBtn.hidden = !(s.awaiting_next_job || (active && status === "awaiting_pen_change"));
@@ -1303,15 +1306,15 @@ function applyTopControls() {
     : [];
   calibrateBtn.hidden = calLayers.length === 0;
   calibrateBtn.textContent = calLayers.length > 1
-    ? "Plot Calibration Layers"
-    : "Plot Calibration Layer";
+    ? t("controls.calibrate_plural")
+    : t("controls.calibrate");
   cancelBtn.hidden = !active && !s.awaiting_next_job;
 
   // Top status pill text
   if (s.awaiting_next_job) {
     statusEl.textContent = statusLabel("awaiting_next_job");
     statusEl.className = "status awaiting_next_job";
-    topMessage.textContent = "Ready for the next job. Load paper / swap pen, then click Continue.";
+    topMessage.textContent = t("msg.awaiting_next_job");
     topMessage.className = "muted";
   } else if (!active) {
     statusEl.textContent = statusLabel("idle");
@@ -1321,10 +1324,10 @@ function applyTopControls() {
     statusEl.textContent = `${statusLabel(status)}${active.filename ? ` · ${active.filename}` : ""}`;
     statusEl.className = `status ${status}`;
     let msg = "";
-    if (active.error) msg = `Error: ${active.error}`;
-    else if (status === "awaiting_pen_change") msg = "Swap the pen if needed, then click Continue for the next layer.";
-    else if (status === "awaiting_optimize") msg = "Waiting for SVG optimization to finish…";
-    else if (status === "optimizing") msg = "Optimizing SVG…";
+    if (active.error) msg = t("msg.error_prefix", { error: active.error });
+    else if (status === "awaiting_pen_change") msg = t("msg.awaiting_pen_change");
+    else if (status === "awaiting_optimize") msg = t("msg.awaiting_optimize");
+    else if (status === "optimizing") msg = t("msg.optimizing");
     topMessage.textContent = msg;
     topMessage.className = active.error ? "error" : "muted";
   }
@@ -1335,8 +1338,8 @@ function applyTopControls() {
   const busy = !!s.active_id || !!s.awaiting_next_job;
   shutdownBtn.disabled = busy;
   shutdownBtn.title = busy
-    ? "Cancel or finish the active plot before shutting down"
-    : "Shut down Raspberry Pi";
+    ? t("a11y.shutdown_busy")
+    : t("a11y.shutdown");
 
   // Sticky progress bar
   if (active && active.status === "plotting" && active.plotting_started_at && active.estimated_total_seconds > 0) {
@@ -1359,7 +1362,7 @@ function startSharedElapsed(startedAt, estTotal) {
     const pct = estTotal > 0 ? Math.min(100, (secs / estTotal) * 100) : 0;
     fill.style.width = `${pct}%`;
     const remaining = Math.max(0, estTotal - secs);
-    timeEl.textContent = `${formatDuration(Math.round(remaining))} remaining`;
+    timeEl.textContent = t("progress.remaining", { time: formatDuration(Math.round(remaining)) });
   };
   render();
   sharedElapsedTimer = setInterval(render, 1000);
@@ -1480,9 +1483,10 @@ function layerSwatch(type, penHex, pageHex) {
     : `<span class="layer-swatch-dot"></span>`;
   // Pen == page is an invisible plot; a faint halo keeps the icon legible.
   const faint = penHex && pageHex && penHex === pageHex ? " faint" : "";
+  const typeLabel = type ? t(`layer_type.${type}`) : "";
   const title = penHex
-    ? `Pen color ${penHex}${type ? ` · ${type}` : ""}`
-    : (type || "");
+    ? t("swatch.pen_color", { hex: penHex }) + (typeLabel ? ` · ${typeLabel}` : "")
+    : typeLabel;
   return `<span class="layer-swatch${faint}" style="background:${page};color:${pen};"`
     + (title ? ` title="${escapeHtml(title)}"` : "")
     + `>${inner}</span>`;
@@ -1508,9 +1512,17 @@ const settingsOptimizeLinesort = $("settings-optimize-linesort");
 const settingsOptimizeReloop = $("settings-optimize-reloop");
 const settingsOptimizeTolerance = $("settings-optimize-tolerance");
 const settingsDisplayUnit = $("settings-display-unit");
+const settingsLanguage = $("settings-language");
 settingsBtn.addEventListener("click", openSettings);
-$("settings-cancel").addEventListener("click", () => { settingsModal.hidden = true; });
-settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) settingsModal.hidden = true; });
+// Closing without saving reverts a live language preview to the saved language.
+function closeSettings(revertLang) {
+  settingsModal.hidden = true;
+  if (revertLang) I18N.revertLanguage();
+}
+$("settings-cancel").addEventListener("click", () => closeSettings(true));
+settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) closeSettings(true); });
+// Live-preview the language the moment it's picked; Save keeps it, Cancel reverts.
+settingsLanguage?.addEventListener("change", () => I18N.previewLanguage(settingsLanguage.value));
 {
   const clampOnLeaveSettings = (e) => {
     const el = e.target;
@@ -1530,8 +1542,8 @@ settingsApiKeyCopy.addEventListener("click", async () => {
   if (!settingsApiKey.value) return;
   try { await navigator.clipboard.writeText(settingsApiKey.value); }
   catch { settingsApiKey.select(); document.execCommand("copy"); }
-  settingsApiKeyCopy.textContent = "Copied";
-  setTimeout(() => { settingsApiKeyCopy.textContent = "Copy"; }, 1200);
+  settingsApiKeyCopy.textContent = t("common.copied");
+  setTimeout(() => { settingsApiKeyCopy.textContent = t("common.copy"); }, 1200);
 });
 
 function applyAppSettings(data) {
@@ -1591,6 +1603,7 @@ async function openSettings() {
     settingsOptimizeReloop.checked = data.optimize_svg_reloop_default !== false;
     settingsOptimizeTolerance.value = (data.optimize_svg_tolerance_default_mm ?? 0.10).toFixed(2);
     settingsDisplayUnit.value = data.display_unit || effectiveDisplayUnit();
+    if (settingsLanguage) settingsLanguage.value = I18N.getLanguage();
     applySettingsOptimizeEnabledStyle();
     for (const sel of ["#settings-speed-pendown-slider", "#settings-speed-penup-slider", "#settings-accel-slider"]) {
       const s = document.querySelector(sel);
@@ -1628,8 +1641,10 @@ async function saveSettings() {
     if (!res.ok) throw new Error(await res.text());
     applyAppSettings(await res.json());
     settingsModal.hidden = true;
+    // Language was live-previewed on selection; persist the current choice.
+    I18N.commitLanguage();
   } catch (e) {
-    $("settings-message").textContent = `Save failed: ${e.message}`;
+    $("settings-message").textContent = t("settings.save_failed", { message: e.message });
     $("settings-message").className = "error";
   }
 }
@@ -1676,7 +1691,7 @@ function syncSettingsOptimizeMaster() {
 }
 
 function resetSettingsOptimize() {
-  settingsOptimize.checked = false;
+  settingsOptimize.checked = true;
   settingsOptimizeLinemerge.checked = true;
   settingsOptimizeLinesimplify.checked = true;
   settingsOptimizeLinesort.checked = true;
@@ -1742,14 +1757,14 @@ shutdownModal.addEventListener("click", (e) => { if (e.target === shutdownModal)
 shutdownConfirm.addEventListener("click", async () => {
   shutdownConfirm.disabled = true;
   shutdownCancel.disabled = true;
-  shutdownMessage.textContent = "Shutting down…";
+  shutdownMessage.textContent = t("shutdown.sending");
   shutdownMessage.className = "muted";
   try {
     const res = await fetch("/system/shutdown", { method: "POST" });
     if (!res.ok) throw new Error(await readErr(res));
-    shutdownMessage.textContent = "Shutdown command sent. You can close this tab.";
+    shutdownMessage.textContent = t("shutdown.sent");
   } catch (e) {
-    shutdownMessage.textContent = `Shutdown failed: ${e.message}`;
+    shutdownMessage.textContent = t("shutdown.failed", { message: e.message });
     shutdownMessage.className = "error";
     shutdownConfirm.disabled = false;
     shutdownCancel.disabled = false;
@@ -1846,6 +1861,17 @@ async function loadAppVersion() {
 let updateStatus = null;
 const updateBanner = $("update-banner");
 
+// On a live language swap, applyStatic() handles all data-i18n markup; re-run
+// the render paths that build text via t()/tn() so dynamic copy updates too.
+I18N.onLanguageChange(() => {
+  applyTopControls();
+  cardEls.forEach((card, id) => {
+    const job = serverState.queue.find((j) => j.job_id === id);
+    if (job) updateCard(card, job);
+  });
+  if (updateStatus) renderUpdateStatus(updateStatus);
+});
+
 function renderUpdateStatus(status) {
   updateStatus = status;
 
@@ -1863,13 +1889,13 @@ function renderUpdateStatus(status) {
   const pill = $("settings-update-pill");
   if (pill) {
     if (!status || status.error) {
-      pill.textContent = "Check failed";
+      pill.textContent = t("update.check_failed");
       pill.className = "update-pill error";
     } else if (status.update_available) {
-      pill.textContent = `Available: version ${status.latest}`;
+      pill.textContent = t("update.available_version", { version: status.latest });
       pill.className = "update-pill available";
     } else {
-      pill.textContent = "Up to date ✓";
+      pill.textContent = t("update.up_to_date");
       pill.className = "update-pill ok";
     }
   }
@@ -1903,14 +1929,14 @@ $("update-skip-btn").addEventListener("click", async () => {
 $("settings-check-update").addEventListener("click", async () => {
   const btn = $("settings-check-update");
   btn.disabled = true;
-  btn.textContent = "Checking…";
+  btn.textContent = t("settings.updates.checking");
   try {
     const res = await fetch("/update/check", { method: "POST" });
     if (res.ok) renderUpdateStatus(await res.json());
   } catch (e) {
   } finally {
     btn.disabled = false;
-    btn.textContent = "Check now";
+    btn.textContent = t("settings.updates.check_now");
   }
 });
 
@@ -1928,7 +1954,7 @@ $("update-progress-close").addEventListener("click", () => {
 let dirtyConfirmCallback = null;
 function openDirtyConfirm(files, onConfirm) {
   dirtyConfirmCallback = onConfirm;
-  $("update-confirm-files").textContent = files.length ? files.join("\n") : "(unknown)";
+  $("update-confirm-files").textContent = files.length ? files.join("\n") : t("update.unknown_files");
   $("update-confirm-modal").hidden = false;
 }
 $("update-confirm-cancel").addEventListener("click", () => {
@@ -1953,9 +1979,9 @@ async function startUpdate(dryRun, force = false) {
   const statusEl = $("update-progress-status");
   const closeBtn = $("update-progress-close");
 
-  title.textContent = dryRun ? "Update dry run…" : "Updating Plotter Hub…";
+  title.textContent = dryRun ? t("update.dryrun_title") : t("update.progress_title");
   logEl.textContent = "";
-  statusEl.textContent = "Starting…";
+  statusEl.textContent = t("update.starting");
   statusEl.className = "muted";
   closeBtn.hidden = true;
   modal.hidden = false;
@@ -1968,7 +1994,7 @@ async function startUpdate(dryRun, force = false) {
       body: JSON.stringify({ dry_run: !!dryRun, force: !!force }),
     });
   } catch (e) {
-    statusEl.textContent = `Could not start update: ${e.message}`;
+    statusEl.textContent = t("update.could_not_start", { message: e.message });
     statusEl.className = "error";
     closeBtn.hidden = false;
     return;
@@ -1983,10 +2009,8 @@ async function startUpdate(dryRun, force = false) {
       openDirtyConfirm(detail.files || [], () => startUpdate(dryRun, true));
       return;
     }
-    const msg = (detail && typeof detail === "object")
-      ? (detail.message || "update refused")
-      : (detail || res.statusText);
-    statusEl.textContent = `Could not start update: ${msg}`;
+    const msg = apiErrText(detail) || res.statusText;
+    statusEl.textContent = t("update.could_not_start", { message: msg });
     statusEl.className = "error";
     closeBtn.hidden = false;
     return;
@@ -2013,7 +2037,7 @@ async function startUpdate(dryRun, force = false) {
           logEl.scrollTop = logEl.scrollHeight;
         }
         if (/update DONE \(dry run\)/.test(d.log)) {
-          finish("Dry run complete — no changes were applied.", false);
+          finish(t("update.dryrun_done"), false);
           return;
         }
       } else {
@@ -2030,22 +2054,22 @@ async function startUpdate(dryRun, force = false) {
         if (r.ok) {
           const d = await r.json();
           if (target && d.version === target) {
-            finish(`Updated to ${target}. Reloading…`, false);
+            finish(t("update.updated_reloading", { version: target }), false);
             setTimeout(() => location.reload(), 1500);
             return;
           }
-          if (sawDown) statusEl.textContent = "Service is back, finishing…";
+          if (sawDown) statusEl.textContent = t("update.service_back");
         } else {
           sawDown = true;
         }
       } catch (e) {
         sawDown = true;
-        statusEl.textContent = "Service restarting…";
+        statusEl.textContent = t("update.service_restarting");
       }
     }
 
     if (Date.now() - startedAt > TIMEOUT_MS) {
-      finish("Update is taking longer than expected. Check update.log on the Pi.", true);
+      finish(t("update.timeout"), true);
       return;
     }
     setTimeout(tick, 1500);

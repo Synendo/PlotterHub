@@ -37,6 +37,37 @@ PAPER_PRESETS: dict[str, tuple[float, float]] = {
 LENGTH_UNIT_TO_MM: dict[str, float] = {"mm": 1.0, "cm": 10.0, "in": 25.4}
 
 
+# Web-UI-facing errors carry a stable {code, params} detail instead of an
+# English string, so the browser can localize them (see apiErrText in app.js).
+# Only the unprefixed (web UI) routes use these; the /api/v1/* routes keep
+# their plain-string details for external clients.
+def _coded(status: int, code: str, **params) -> HTTPException:
+    detail: dict = {"code": code}
+    if params:
+        detail["params"] = params
+    return HTTPException(status, detail=detail)
+
+
+# The plot worker raises RuntimeError with a stable message; map the known ones
+# to codes, and fall back to a generic code that carries the raw text.
+_WORKER_ERROR_CODES: dict[str, str] = {
+    "No active plot": "no_active_plot",
+    "No paused job to resume": "no_paused_job",
+    "No resume data": "no_resume_data",
+    "Nothing to continue": "nothing_to_continue",
+    "Calibration plot only available at a pen-change pause": "calibrate_not_at_pause",
+    "This job has no calibration layers": "no_calibration_layers",
+    "No active job": "no_active_job",
+}
+
+
+def _worker_error(e: RuntimeError) -> HTTPException:
+    code = _WORKER_ERROR_CODES.get(str(e))
+    if code:
+        return _coded(409, code)
+    return _coded(409, "worker_error", detail=str(e))
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     state.init(asyncio.get_running_loop())
@@ -80,7 +111,7 @@ async def upload(file: UploadFile = File(...)):
     # with a clean message rather than the lxml parse trace.
     head = data.lstrip(b"\xef\xbb\xbf").lstrip()
     if not head.startswith(b"<"):
-        raise HTTPException(400, "Not an SVG file. Please drop a .svg.")
+        raise _coded(400, "not_svg")
     svg_id = uuid.uuid4().hex[:8]
     path = UPLOAD_DIR / f"{svg_id}.svg"
     path.write_bytes(data)
@@ -88,7 +119,7 @@ async def upload(file: UploadFile = File(...)):
         info = svg_utils.parse_layers(path)
     except Exception:
         path.unlink(missing_ok=True)
-        raise HTTPException(400, "That doesn't look like a valid SVG.")
+        raise _coded(400, "invalid_svg")
     optimize_queue.enqueue_for_upload(svg_id)
     return {"id": svg_id, "filename": file.filename or "upload.svg", **info}
 
@@ -240,9 +271,9 @@ class JobUpdate(_OptimizeOptionalFields):
 def create_job(req: JobCreate):
     path = UPLOAD_DIR / f"{req.svg_id}.svg"
     if not path.exists():
-        raise HTTPException(404, "svg not found")
+        raise _coded(404, "svg_not_found")
     if not any(s.get("selected", True) for s in (req.layer_selections or [])):
-        raise HTTPException(400, "select at least one layer")
+        raise _coded(400, "select_one_layer")
     payload = req.model_dump()
     _clamp_job_fields(payload, payload.get("paper_width_mm"),
                       payload.get("paper_height_mm"))
@@ -269,9 +300,9 @@ def get_job(job_id: str):
 def update_job(job_id: str, req: JobUpdate):
     j = state.get_job(job_id)
     if j is None:
-        raise HTTPException(404)
+        raise _coded(404, "job_not_found")
     if j["status"] not in ("queued", "completed", "failed", "cancelled"):
-        raise HTTPException(409, "cannot edit an active job")
+        raise _coded(409, "cannot_edit_active")
     # exclude_unset so the client distinguishes "not sent" from "explicitly null"
     # — needed e.g. for paper_size_name which can be cleared back to None.
     updates = req.model_dump(exclude_unset=True)
@@ -322,9 +353,9 @@ def delete_svg_files(svg_id: str | None) -> None:
 def delete_job(job_id: str):
     j = state.get_job(job_id)
     if j is None:
-        raise HTTPException(404)
+        raise _coded(404, "job_not_found")
     if j["status"] in ("plotting", "planning", "paused", "awaiting_pen_change", "homing"):
-        raise HTTPException(409, "cannot remove an active job")
+        raise _coded(409, "cannot_remove_active")
     svg_id = j.get("svg_id")
     state.remove_job(job_id)
     delete_svg_files(svg_id)
@@ -650,9 +681,9 @@ async def api_system_shutdown():
 def move_job(job_id: str, req: MoveRequest):
     j = state.get_job(job_id)
     if j is None:
-        raise HTTPException(404)
+        raise _coded(404, "job_not_found")
     if j["status"] in ("plotting", "planning", "paused", "awaiting_pen_change", "homing"):
-        raise HTTPException(409, "cannot move an active job")
+        raise _coded(409, "cannot_move_active")
     state.move_job(job_id, req.new_index)
     return {"ok": True}
 
@@ -661,11 +692,11 @@ def move_job(job_id: str, req: MoveRequest):
 def requeue_job(job_id: str):
     j = state.get_job(job_id)
     if j is None:
-        raise HTTPException(404)
+        raise _coded(404, "job_not_found")
     if j["status"] == "queued":
         return j  # already runnable — nothing to do (idempotent).
     if j["status"] in ("plotting", "planning", "paused", "awaiting_pen_change", "homing"):
-        raise HTTPException(409, "Cannot re-queue a job that is still running")
+        raise _coded(409, "cannot_requeue_running")
     state.update_job(job_id, status="queued", error=None, resume_path=None,
                      started_at=None, plotting_started_at=None,
                      stages=[], current_stage_index=0,
@@ -692,7 +723,7 @@ def start_queue():
 def pause_queue():
     job = state.active_job()
     if job is None or job["status"] != "plotting":
-        raise HTTPException(409, "no active plotting job")
+        raise _coded(409, "no_active_plotting_job")
     plot_worker.pause_active()
     return {"ok": True}
 
@@ -701,11 +732,11 @@ def pause_queue():
 def pause_at_pen_up_queue():
     job = state.active_job()
     if job is None or job["status"] != "plotting":
-        raise HTTPException(409, "no active plotting job")
+        raise _coded(409, "no_active_plotting_job")
     try:
         plot_worker.pause_at_pen_lift_active()
     except RuntimeError as e:
-        raise HTTPException(409, str(e))
+        raise _worker_error(e)
     return {"ok": True}
 
 
@@ -714,7 +745,7 @@ def resume_queue():
     try:
         plot_worker.resume_active()
     except RuntimeError as e:
-        raise HTTPException(409, str(e))
+        raise _worker_error(e)
     return {"ok": True}
 
 
@@ -723,7 +754,7 @@ def continue_queue():
     try:
         plot_worker.continue_next()
     except RuntimeError as e:
-        raise HTTPException(409, str(e))
+        raise _worker_error(e)
     return {"ok": True}
 
 
@@ -732,7 +763,7 @@ def cancel_queue():
     try:
         plot_worker.cancel_active()
     except RuntimeError as e:
-        raise HTTPException(409, str(e))
+        raise _worker_error(e)
     return {"ok": True}
 
 
@@ -741,7 +772,7 @@ def calibrate_queue():
     try:
         plot_worker.trigger_calibration()
     except RuntimeError as e:
-        raise HTTPException(409, str(e))
+        raise _worker_error(e)
     return {"ok": True}
 
 
@@ -756,7 +787,7 @@ def get_settings():
 def patch_settings(req: SettingsUpdate):
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if not updates:
-        raise HTTPException(400, "no settings provided")
+        raise _coded(400, "no_settings")
     config.update(**updates)
     return config.snapshot()
 
@@ -790,7 +821,7 @@ def update_skip(req: UpdateSkip):
     # tab can't suppress a release the user hasn't seen yet.
     status = updates.get_status()
     if req.version != status["latest"]:
-        raise HTTPException(409, "skip version does not match latest remote version")
+        raise _coded(409, "update_skip_mismatch")
     updates.skip(req.version)
     return updates.get_status()
 
@@ -810,13 +841,13 @@ def update_apply(req: UpdateApply):
     # Re-check against the remote so we never kick off a pointless reset/install.
     status = updates.get_status(force=True)
     if not status["update_available"]:
-        raise HTTPException(409, "already up to date")
+        raise _coded(409, "update_already_current")
     # Don't launch a second updater on top of a running one (e.g. a double-click).
     if updates.update_in_progress():
-        raise HTTPException(409, "an update is already in progress")
+        raise _coded(409, "update_in_progress")
     # Never restart the service mid-plot — it would wreck the running job.
     if state.snapshot()["status"] != "idle":
-        raise HTTPException(409, "cannot update while the plotter is busy")
+        raise _coded(409, "update_busy")
     # The wrapper does `git reset --hard`, which overwrites tracked files. Refuse
     # by default if any are locally modified, but let the UI confirm and retry
     # with force=true (the structured detail lets it show what will be lost).

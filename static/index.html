@@ -9,14 +9,14 @@
   <header>
     <h1><img class="app-logo" src="/static/plotter_hub_logo.svg" alt="Plotter Hub" /> <span class="version" id="app-version"></span></h1>
     <div class="header-right">
-      <div id="status" class="status idle">idle</div>
-      <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">
+      <div id="status" class="status idle" data-i18n="status.idle">Idle</div>
+      <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings" data-i18n-title="a11y.settings" data-i18n-aria-label="a11y.settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
         </svg>
       </button>
-      <button id="shutdown-btn" class="icon-btn" title="Shut down Raspberry Pi" aria-label="Shut down Raspberry Pi">
+      <button id="shutdown-btn" class="icon-btn" title="Shut down Raspberry Pi" aria-label="Shut down Raspberry Pi" data-i18n-title="a11y.shutdown" data-i18n-aria-label="a11y.shutdown">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
           <line x1="12" y1="2" x2="12" y2="12"></line>
@@ -28,46 +28,46 @@
   <div id="update-banner" class="update-banner" hidden>
     <div class="update-banner-main">
       <span class="update-banner-text">
-        Update available: <span id="update-from"></span> → <span id="update-to"></span>
+        <span data-i18n="update.banner_prefix">Update available:</span> <span id="update-from"></span> → <span id="update-to"></span>
       </span>
     </div>
     <div class="update-banner-actions">
-      <button id="update-now-btn" class="primary" type="button">Update now</button>
-      <button id="update-skip-btn" class="neutral" type="button">Skip</button>
+      <button id="update-now-btn" class="primary" type="button" data-i18n="update.update_now">Update now</button>
+      <button id="update-skip-btn" class="neutral" type="button" data-i18n="update.skip">Skip</button>
     </div>
   </div>
 
   <div id="update-progress-modal" class="modal" hidden>
     <div class="modal-card scrollable">
-      <h2 id="update-progress-title">Updating Plotter Hub…</h2>
-      <p class="muted">The service will restart and this page will reconnect automatically — please don't close this tab.</p>
+      <h2 id="update-progress-title" data-i18n="update.progress_title">Updating Plotter Hub…</h2>
+      <p class="muted" data-i18n="update.progress_note">The service will restart and this page will reconnect automatically — please don't close this tab.</p>
       <pre id="update-progress-log" class="update-log"></pre>
       <div id="update-progress-status" class="muted"></div>
       <div class="actions">
-        <button id="update-progress-close" class="neutral" hidden>Close</button>
+        <button id="update-progress-close" class="neutral" hidden data-i18n="common.close">Close</button>
       </div>
     </div>
   </div>
 
   <div id="update-confirm-modal" class="modal" hidden>
     <div class="modal-card">
-      <h2>Overwrite local changes?</h2>
-      <p class="muted">The app folder has local changes that will be replaced by the update. Your settings, job queue, and uploaded files are kept.</p>
+      <h2 data-i18n="update.confirm_title">Overwrite local changes?</h2>
+      <p class="muted" data-i18n="update.confirm_note">The app folder has local changes that will be replaced by the update. Your settings, job queue, and uploaded files are kept.</p>
       <pre id="update-confirm-files" class="update-log"></pre>
       <div class="actions">
-        <button id="update-confirm-cancel" class="neutral">Cancel</button>
-        <button id="update-confirm-overwrite" class="danger">Overwrite &amp; update</button>
+        <button id="update-confirm-cancel" class="neutral" data-i18n="common.cancel">Cancel</button>
+        <button id="update-confirm-overwrite" class="danger" data-i18n="update.confirm_overwrite">Overwrite &amp; update</button>
       </div>
     </div>
   </div>
 
   <div id="shutdown-modal" class="modal" hidden>
     <div class="modal-card">
-      <h2>Shut down Raspberry Pi?</h2>
-      <p class="muted">The Plotter Hub service will stop and the Pi will power off. You'll need physical access to turn it back on.</p>
+      <h2 data-i18n="shutdown.title">Shut down Raspberry Pi?</h2>
+      <p class="muted" data-i18n="shutdown.note">The Plotter Hub service will stop and the Pi will power off. You'll need physical access to turn it back on.</p>
       <div class="actions">
-        <button id="shutdown-cancel" class="neutral">Cancel</button>
-        <button id="shutdown-confirm" class="danger">Shut down</button>
+        <button id="shutdown-cancel" class="neutral" data-i18n="common.cancel">Cancel</button>
+        <button id="shutdown-confirm" class="danger" data-i18n="shutdown.confirm">Shut down</button>
       </div>
       <div id="shutdown-message" class="muted"></div>
     </div>
@@ -75,17 +75,50 @@
 
   <div id="settings-modal" class="modal" hidden>
     <div class="modal-card scrollable">
-      <h2>Settings</h2>
+      <h2 data-i18n="settings.title">Settings</h2>
       <div class="modal-body">
 
-      <section class="card-section" data-section="plotter-model">
+      <section class="card-section" data-section="localization">
         <header class="card-section-head">
-          <span class="card-section-title">Plotter Model</span>
+          <span class="card-section-title" data-i18n="settings.localization.title">Language &amp; Display</span>
+          <button class="icon-btn card-section-reset" data-reset="settings-display" title="Restore default" aria-label="Restore default display" data-i18n-title="a11y.restore_default" data-i18n-aria-label="a11y.restore_default_display">↺</button>
           <span class="card-section-caret" aria-hidden="true">▼</span>
         </header>
         <div class="card-section-body">
           <label class="field">
-            <span class="field-label">Model</span>
+            <span class="field-label" data-i18n="settings.language.label">Language</span>
+            <select id="settings-language">
+              <option value="en">English</option>
+              <option value="de">Deutsch</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="it">Italiano</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+              <option value="nl">Nederlands</option>
+              <option value="pt">Português</option>
+              <option value="zh-Hans">简体中文</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label" data-i18n="settings.display.unit_label">Length Unit</span>
+            <select id="settings-display-unit">
+              <option value="mm" data-i18n="settings.display.unit_mm">Millimetres (mm)</option>
+              <option value="cm" data-i18n="settings.display.unit_cm">Centimetres (cm)</option>
+              <option value="in" data-i18n="settings.display.unit_in">Inches (in)</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="card-section" data-section="plotter-model">
+        <header class="card-section-head">
+          <span class="card-section-title" data-i18n="settings.plotter_model.title">Plotter Model</span>
+          <span class="card-section-caret" aria-hidden="true">▼</span>
+        </header>
+        <div class="card-section-body">
+          <label class="field">
+            <span class="field-label" data-i18n="settings.plotter_model.label">Model</span>
             <select id="settings-plotter-model">
               <option value="1">1 — AxiDraw V2 / V3 / SE A4 (215 × 279 mm)</option>
               <option value="2">2 — AxiDraw SE A3 / iDraw H SE A3 (430 × 297 mm)</option>
@@ -97,113 +130,35 @@
               <option value="8">8 — AxiDraw V3 Wide (390 × 218 mm)</option>
             </select>
           </label>
-          <p class="muted">Plotter model sets the hardware working area — change only if the plotter itself is different.</p>
-        </div>
-      </section>
-
-      <section class="card-section" data-section="display">
-        <header class="card-section-head">
-          <span class="card-section-title">Display</span>
-          <button class="icon-btn card-section-reset" data-reset="settings-display" title="Restore default" aria-label="Restore default display">↺</button>
-          <span class="card-section-caret" aria-hidden="true">▼</span>
-        </header>
-        <div class="card-section-body">
-          <label class="field">
-            <span class="field-label">Length Unit</span>
-            <select id="settings-display-unit">
-              <option value="mm">Millimetres (mm)</option>
-              <option value="cm">Centimetres (cm)</option>
-              <option value="in">Inches (in)</option>
-            </select>
-          </label>
-        </div>
-      </section>
-
-      <section class="card-section" data-section="job-options">
-        <header class="card-section-head">
-          <span class="card-section-title">Job Options</span>
-          <button class="icon-btn card-section-reset" data-reset="settings-job-options" title="Restore defaults" aria-label="Restore default job options">↺</button>
-          <span class="card-section-caret" aria-hidden="true">▼</span>
-        </header>
-        <div class="card-section-body">
-          <p class="muted">Defaults for new jobs. Per-job settings will override these defaults.</p>
-          <label class="inline-check">
-            <input type="checkbox" id="settings-pause-between-layers" />
-            <span>Pause between layers for pen changes</span>
-          </label>
-          <label class="inline-check">
-            <input type="checkbox" id="settings-pause-after-job" />
-            <span>Pause after this job (for paper / pen change before the next one)</span>
-          </label>
-          <label class="inline-check">
-            <input type="checkbox" id="settings-delete-on-complete" />
-            <span>Delete on complete (remove the job from the queue when finished)</span>
-          </label>
-        </div>
-      </section>
-
-      <section class="card-section collapsed" data-section="optimize">
-        <header class="card-section-head">
-          <span class="card-section-title">SVG Optimization (vpype)</span>
-          <button class="icon-btn card-section-reset" data-reset="settings-optimize" title="Restore defaults" aria-label="Restore default optimization settings">↺</button>
-          <span class="card-section-caret" aria-hidden="true">▼</span>
-        </header>
-        <div class="card-section-body">
-          <p class="muted">Defaults for new jobs. Per-job settings will override these defaults.</p>
-          <label class="inline-check">
-            <input type="checkbox" id="settings-optimize" />
-            <span>Optimize SVG before plotting</span>
-          </label>
-          <div class="optimize-options">
-            <label class="inline-check">
-              <input type="checkbox" id="settings-optimize-linemerge" />
-              <span>Merge nearby endpoints (linemerge)</span>
-            </label>
-            <label class="inline-check">
-              <input type="checkbox" id="settings-optimize-linesimplify" />
-              <span>Simplify paths (linesimplify)</span>
-            </label>
-            <label class="inline-check">
-              <input type="checkbox" id="settings-optimize-linesort" />
-              <span>Reorder for less travel (linesort)</span>
-            </label>
-            <label class="inline-check">
-              <input type="checkbox" id="settings-optimize-reloop" />
-              <span>Randomize closed-path start (reloop)</span>
-            </label>
-            <label class="field">
-              <span class="field-label">Tolerance (mm) — used by linemerge + linesimplify</span>
-              <input type="number" id="settings-optimize-tolerance" min="0.01" max="10" step="0.01" value="0.10" />
-            </label>
-          </div>
+          <p class="muted" data-i18n="settings.plotter_model.note">Match this to your AxiDraw hardware — not your paper size.</p>
         </div>
       </section>
 
       <section class="card-section collapsed" data-section="plotter-speed">
         <header class="card-section-head">
-          <span class="card-section-title">Plotter Speed</span>
-          <button class="icon-btn card-section-reset" data-reset="settings-speed" title="Restore defaults" aria-label="Restore default plotter speed">↺</button>
+          <span class="card-section-title" data-i18n="settings.speed.title">Plotter Speed</span>
+          <button class="icon-btn card-section-reset" data-reset="settings-speed" title="Restore defaults" aria-label="Restore default plotter speed" data-i18n-title="a11y.restore_defaults" data-i18n-aria-label="a11y.restore_default_speed">↺</button>
           <span class="card-section-caret" aria-hidden="true">▼</span>
         </header>
         <div class="card-section-body">
-          <p class="muted">Defaults for new jobs. Per-job settings will override these defaults.</p>
+          <p class="muted" data-i18n="settings.defaults_note">Defaults for new jobs. Per-job settings will override these defaults.</p>
           <div class="slider-stack">
             <label class="field slider">
-              <span class="field-label">Pen-down speed (1–110)</span>
+              <span class="field-label" data-i18n="speed.pendown_label">Pen-down speed (1–110)</span>
               <div class="slider-row">
                 <input type="range" id="settings-speed-pendown-slider" min="1" max="110" step="1" value="25" />
                 <input type="number" id="settings-speed-pendown" min="1" max="110" step="1" value="25" />
               </div>
             </label>
             <label class="field slider">
-              <span class="field-label">Pen-up speed (1–110)</span>
+              <span class="field-label" data-i18n="speed.penup_label">Pen-up speed (1–110)</span>
               <div class="slider-row">
                 <input type="range" id="settings-speed-penup-slider" min="1" max="110" step="1" value="75" />
                 <input type="number" id="settings-speed-penup" min="1" max="110" step="1" value="75" />
               </div>
             </label>
             <label class="field slider">
-              <span class="field-label">Acceleration (1–100)</span>
+              <span class="field-label" data-i18n="speed.accel_label">Acceleration (1–100)</span>
               <div class="slider-row">
                 <input type="range" id="settings-accel-slider" min="1" max="100" step="1" value="75" />
                 <input type="number" id="settings-accel" min="1" max="100" step="1" value="75" />
@@ -213,23 +168,84 @@
         </div>
       </section>
 
-      <section class="card-section collapsed" data-section="api-key">
+      <section class="card-section collapsed" data-section="optimize">
         <header class="card-section-head">
-          <span class="card-section-title">API Key</span>
+          <span class="card-section-title" data-i18n="settings.optimize.title">SVG Optimization (vpype)</span>
+          <button class="icon-btn card-section-reset" data-reset="settings-optimize" title="Restore defaults" aria-label="Restore default optimization settings" data-i18n-title="a11y.restore_defaults" data-i18n-aria-label="a11y.restore_default_optimize">↺</button>
           <span class="card-section-caret" aria-hidden="true">▼</span>
         </header>
         <div class="card-section-body">
-          <p class="muted">Send this in an <code>X-API-Key</code> header on requests to <code>/api/v1/*</code>. Auto-generated on first boot. See <a href="https://github.com/Synendo/PlotterHub/blob/main/API.md" target="_blank" rel="noopener">API.md</a> for the full reference.</p>
+          <p class="muted" data-i18n="settings.defaults_note">Defaults for new jobs. Per-job settings will override these defaults.</p>
+          <label class="inline-check">
+            <input type="checkbox" id="settings-optimize" />
+            <span data-i18n="optimize.enable">Optimize SVG before plotting</span>
+          </label>
+          <div class="optimize-options">
+            <label class="inline-check">
+              <input type="checkbox" id="settings-optimize-linemerge" />
+              <span data-i18n="optimize.linemerge">Merge nearby endpoints (linemerge)</span>
+            </label>
+            <label class="inline-check">
+              <input type="checkbox" id="settings-optimize-linesimplify" />
+              <span data-i18n="optimize.linesimplify">Simplify paths (linesimplify)</span>
+            </label>
+            <label class="inline-check">
+              <input type="checkbox" id="settings-optimize-linesort" />
+              <span data-i18n="optimize.linesort">Reorder for less travel (linesort)</span>
+            </label>
+            <label class="inline-check">
+              <input type="checkbox" id="settings-optimize-reloop" />
+              <span data-i18n="optimize.reloop">Randomize closed-path start (reloop)</span>
+            </label>
+            <label class="field">
+              <span class="field-label" data-i18n="optimize.tolerance_label">Tolerance (mm) — used by linemerge + linesimplify</span>
+              <input type="number" id="settings-optimize-tolerance" min="0.01" max="10" step="0.01" value="0.10" />
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card-section" data-section="job-options">
+        <header class="card-section-head">
+          <span class="card-section-title" data-i18n="settings.job_options.title">Job Options</span>
+          <button class="icon-btn card-section-reset" data-reset="settings-job-options" title="Restore defaults" aria-label="Restore default job options" data-i18n-title="a11y.restore_defaults" data-i18n-aria-label="a11y.restore_default_job_options">↺</button>
+          <span class="card-section-caret" aria-hidden="true">▼</span>
+        </header>
+        <div class="card-section-body">
+          <p class="muted" data-i18n="settings.defaults_note">Defaults for new jobs. Per-job settings will override these defaults.</p>
+          <label class="inline-check">
+            <input type="checkbox" id="settings-pause-between-layers" />
+            <span data-i18n="job.pause_between_layers">Pause between layers for pen changes</span>
+          </label>
+          <label class="inline-check">
+            <input type="checkbox" id="settings-pause-after-job" />
+            <span data-i18n="job.pause_after_job">Pause after this job (for paper / pen change before the next one)</span>
+          </label>
+          <label class="inline-check">
+            <input type="checkbox" id="settings-delete-on-complete" />
+            <span data-i18n="job.delete_on_complete">Delete on complete (remove the job from the queue when finished)</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="card-section collapsed" data-section="api-key">
+        <header class="card-section-head">
+          <span class="card-section-title" data-i18n="settings.api_key.title">API Key</span>
+          <span class="card-section-caret" aria-hidden="true">▼</span>
+        </header>
+        <div class="card-section-body">
+          <p class="muted" data-i18n-html="settings.api_key.note_html">Send this in an <code>X-API-Key</code> header on requests to <code>/api/v1/*</code>.</p>
           <div class="api-key-row">
             <input id="settings-api-key" type="text" readonly />
-            <button id="settings-api-key-copy" class="neutral" type="button">Copy</button>
+            <button id="settings-api-key-copy" class="neutral" type="button" data-i18n="common.copy">Copy</button>
           </div>
+          <p class="muted" data-i18n-html="settings.api_key.hint_html">Auto-generated on first boot. See <a href="https://github.com/Synendo/PlotterHub/blob/main/API.md" target="_blank" rel="noopener">API.md</a> for the full reference.</p>
         </div>
       </section>
 
       <section class="card-section collapsed" data-section="updates">
         <header class="card-section-head">
-          <span class="card-section-title">About &amp; Updates</span>
+          <span class="card-section-title" data-i18n="settings.updates.title">About &amp; Updates</span>
           <span class="card-section-caret" aria-hidden="true">▼</span>
         </header>
         <div class="card-section-body">
@@ -238,19 +254,19 @@
             <span id="settings-update-pill" class="update-pill"></span>
           </div>
           <div class="settings-update-row">
-            <span class="muted">Version <span id="settings-current-version"></span></span>
+            <span class="muted"><span data-i18n="settings.updates.version_label">Version</span> <span id="settings-current-version"></span></span>
           </div>
           <div class="settings-update-actions">
-            <button id="settings-check-update" class="neutral" type="button">Check now</button>
-            <button id="settings-update-now" class="primary" type="button" hidden>Update now</button>
+            <button id="settings-check-update" class="neutral" type="button" data-i18n="settings.updates.check_now">Check now</button>
+            <button id="settings-update-now" class="primary" type="button" hidden data-i18n="update.update_now">Update now</button>
           </div>
         </div>
       </section>
 
       </div>
       <div class="actions">
-        <button id="settings-cancel" class="neutral">Cancel</button>
-        <button id="settings-save" class="primary">Save</button>
+        <button id="settings-cancel" class="neutral" data-i18n="common.cancel">Cancel</button>
+        <button id="settings-save" class="primary" data-i18n="common.save">Save</button>
       </div>
       <div id="settings-message" class="muted"></div>
     </div>
@@ -259,7 +275,7 @@
   <main>
     <section id="upload-section">
       <label class="drop-zone" id="drop-zone" for="file-input">
-        <span>Drop SVGs here (or click) to add to the queue</span>
+        <span data-i18n="upload.drop_hint">Drop SVGs here (or click) to add to the queue</span>
       </label>
       <input type="file" id="file-input" accept=".svg,image/svg+xml" multiple class="visually-hidden" />
       <div id="upload-error" class="error" hidden></div>
@@ -267,13 +283,13 @@
 
     <section id="queue-controls" hidden>
       <div class="actions">
-        <button id="plot-btn" class="primary">Plot</button>
-        <button id="pause-btn" class="secondary" hidden>Pause</button>
-        <button id="pause-pen-up-btn" class="secondary" hidden title="Pause at the next pen lift to avoid leaving a dot mid-stroke (useful for pump-action pens).">Pause at Pen Lift</button>
-        <button id="resume-btn" class="primary" hidden>Resume</button>
-        <button id="continue-btn" class="primary" hidden>Continue</button>
-        <button id="calibrate-btn" class="secondary" hidden>Plot Calibration Layer</button>
-        <button id="cancel-btn" class="danger" hidden>Cancel</button>
+        <button id="plot-btn" class="primary" data-i18n="controls.plot">Plot</button>
+        <button id="pause-btn" class="secondary" hidden data-i18n="controls.pause">Pause</button>
+        <button id="pause-pen-up-btn" class="secondary" hidden title="Pause at the next pen lift to avoid leaving a dot mid-stroke (useful for pump-action pens)." data-i18n="controls.pause_pen_up" data-i18n-title="controls.pause_pen_up_title">Pause at Pen Lift</button>
+        <button id="resume-btn" class="primary" hidden data-i18n="controls.resume">Resume</button>
+        <button id="continue-btn" class="primary" hidden data-i18n="controls.continue">Continue</button>
+        <button id="calibrate-btn" class="secondary" hidden data-i18n="controls.calibrate">Plot Calibration Layer</button>
+        <button id="cancel-btn" class="danger" hidden data-i18n="common.cancel">Cancel</button>
       </div>
       <div id="queue-progress" hidden>
         <div class="progress-bar"><div class="progress-fill"></div></div>
@@ -284,7 +300,7 @@
 
     <section id="queue-section">
       <div id="queue-list"></div>
-      <div id="queue-empty" class="muted empty-hint">Drop an SVG above to get started.</div>
+      <div id="queue-empty" class="muted empty-hint" data-i18n="queue.empty">Drop an SVG above to get started.</div>
     </section>
   </main>
 
@@ -298,10 +314,10 @@
         </div>
         <div class="job-status-pill status"></div>
         <div class="job-actions">
-          <button class="icon-btn job-move-up" title="Move up">↑</button>
-          <button class="icon-btn job-move-down" title="Move down">↓</button>
-          <button class="icon-btn job-requeue" title="Plot again" hidden>↻</button>
-          <button class="icon-btn job-delete" title="Remove">✕</button>
+          <button class="icon-btn job-move-up" title="Move up" data-i18n-title="a11y.move_up">↑</button>
+          <button class="icon-btn job-move-down" title="Move down" data-i18n-title="a11y.move_down">↓</button>
+          <button class="icon-btn job-requeue" title="Plot again" hidden data-i18n-title="a11y.plot_again">↻</button>
+          <button class="icon-btn job-delete" title="Remove" data-i18n-title="a11y.remove">✕</button>
           <span class="card-section-caret" aria-hidden="true">▼</span>
         </div>
       </header>
@@ -312,35 +328,35 @@
             <div class="svg-preview"></div>
             <div class="svg-dims muted"></div>
             <div class="plot-info" hidden>
-              <div><span>Estimated time</span><strong class="est-time">—</strong></div>
-              <div><span>Pen-down distance</span><strong class="pendown-dist">—</strong></div>
-              <div><span>Total distance</span><strong class="total-dist">—</strong></div>
-              <div><span>Pen lifts</span><strong class="pen-lifts">—</strong></div>
+              <div><span data-i18n="plotinfo.est_time">Estimated time</span><strong class="est-time">—</strong></div>
+              <div><span data-i18n="plotinfo.pendown_dist">Pen-down distance</span><strong class="pendown-dist">—</strong></div>
+              <div><span data-i18n="plotinfo.total_dist">Total distance</span><strong class="total-dist">—</strong></div>
+              <div><span data-i18n="plotinfo.pen_lifts">Pen lifts</span><strong class="pen-lifts">—</strong></div>
             </div>
             <section class="card-section collapsed" data-section="parameters">
               <header class="card-section-head">
-                <span class="card-section-title">Plotter Speed</span>
-                <button class="icon-btn card-section-reset" data-reset="parameters" title="Restore defaults" aria-label="Restore parameter defaults">↺</button>
+                <span class="card-section-title" data-i18n="settings.speed.title">Plotter Speed</span>
+                <button class="icon-btn card-section-reset" data-reset="parameters" title="Restore defaults" aria-label="Restore parameter defaults" data-i18n-title="a11y.restore_defaults" data-i18n-aria-label="a11y.restore_parameter_defaults">↺</button>
                 <span class="card-section-caret" aria-hidden="true">▼</span>
               </header>
               <div class="card-section-body">
                 <div class="slider-stack">
                   <label class="field slider">
-                    <span class="field-label">Pen-down speed (1–110)</span>
+                    <span class="field-label" data-i18n="speed.pendown_label">Pen-down speed (1–110)</span>
                     <div class="slider-row">
                       <input type="range" class="speed-pendown-slider" min="1" max="110" step="1" value="25" />
                       <input type="number" class="speed-pendown" value="25" min="1" max="110" step="1" />
                     </div>
                   </label>
                   <label class="field slider">
-                    <span class="field-label">Pen-up speed (1–110)</span>
+                    <span class="field-label" data-i18n="speed.penup_label">Pen-up speed (1–110)</span>
                     <div class="slider-row">
                       <input type="range" class="speed-penup-slider" min="1" max="110" step="1" value="75" />
                       <input type="number" class="speed-penup" value="75" min="1" max="110" step="1" />
                     </div>
                   </label>
                   <label class="field slider">
-                    <span class="field-label">Acceleration (1–100)</span>
+                    <span class="field-label" data-i18n="speed.accel_label">Acceleration (1–100)</span>
                     <div class="slider-row">
                       <input type="range" class="accel-slider" min="1" max="100" step="1" value="75" />
                       <input type="number" class="accel" value="75" min="1" max="100" step="1" />
@@ -353,28 +369,28 @@
           <div class="col-form">
             <section class="card-section" data-section="layers">
               <header class="card-section-head">
-                <span class="card-section-title">Layers</span>
+                <span class="card-section-title" data-i18n="card.layers">Layers</span>
                 <span class="card-section-caret" aria-hidden="true">▼</span>
               </header>
               <div class="card-section-body">
                 <ul class="layers"></ul>
                 <div class="stages-wrap" hidden>
-                  <h3 class="subsection-title">Stages</h3>
+                  <h3 class="subsection-title" data-i18n="card.stages">Stages</h3>
                   <ol class="stages"></ol>
                 </div>
               </div>
             </section>
             <section class="card-section" data-section="paper">
               <header class="card-section-head">
-                <span class="card-section-title">Page</span>
+                <span class="card-section-title" data-i18n="card.page">Page</span>
                 <span class="card-section-caret" aria-hidden="true">▼</span>
               </header>
               <div class="card-section-body">
                 <div class="form-row">
                   <label class="field grow">
-                    <span class="field-label">Paper Size</span>
+                    <span class="field-label" data-i18n="card.paper_size">Paper Size</span>
                     <select class="paper-size">
-                      <optgroup label="Metric (ISO A)">
+                      <optgroup label="Metric (ISO A)" data-i18n-label="paper.group_iso_a">
                         <option value="A0">A0 (841 × 1189 mm)</option>
                         <option value="A1">A1 (594 × 841 mm)</option>
                         <option value="A2">A2 (420 × 594 mm)</option>
@@ -382,7 +398,7 @@
                         <option value="A4">A4 (210 × 297 mm)</option>
                         <option value="A5">A5 (148 × 210 mm)</option>
                       </optgroup>
-                      <optgroup label="Metric (ISO B)">
+                      <optgroup label="Metric (ISO B)" data-i18n-label="paper.group_iso_b">
                         <option value="B0">B0 (1000 × 1414 mm)</option>
                         <option value="B1">B1 (707 × 1000 mm)</option>
                         <option value="B2">B2 (500 × 707 mm)</option>
@@ -390,7 +406,7 @@
                         <option value="B4">B4 (250 × 353 mm)</option>
                         <option value="B5">B5 (176 × 250 mm)</option>
                       </optgroup>
-                      <optgroup label="Imperial">
+                      <optgroup label="Imperial" data-i18n-label="paper.group_imperial">
                         <option value="Letter">Letter (8.5 × 11 in)</option>
                         <option value="Legal">Legal (8.5 × 14 in)</option>
                         <option value="Ledger">Ledger (11 × 17 in)</option>
@@ -398,28 +414,28 @@
                         <option value="ANSI-D">ANSI-D (22 × 34 in)</option>
                         <option value="ANSI-E">ANSI-E (34 × 44 in)</option>
                       </optgroup>
-                      <option value="Custom">Custom</option>
+                      <option value="Custom" data-i18n="paper.custom">Custom</option>
                     </select>
                   </label>
                   <div class="field">
-                    <span class="field-label">Orientation</span>
+                    <span class="field-label" data-i18n="card.orientation">Orientation</span>
                     <div class="segmented orientation">
-                      <button type="button" data-val="portrait" class="active">Portrait</button>
-                      <button type="button" data-val="landscape">Landscape</button>
+                      <button type="button" data-val="portrait" class="active" data-i18n="paper.portrait">Portrait</button>
+                      <button type="button" data-val="landscape" data-i18n="paper.landscape">Landscape</button>
                     </div>
                   </div>
                 </div>
                 <label class="inline-check">
                   <input type="checkbox" class="fit-content" />
-                  <span>Fit content to page</span>
+                  <span data-i18n="card.fit_content">Fit content to page</span>
                 </label>
                 <div class="form-row custom-dims" hidden>
                   <label class="field">
-                    <span class="field-label">Width (mm)</span>
+                    <span class="field-label" data-i18n="card.width_mm">Width (mm)</span>
                     <input class="paper-w" type="number" step="0.1" min="10" value="210" />
                   </label>
                   <label class="field">
-                    <span class="field-label">Height (mm)</span>
+                    <span class="field-label" data-i18n="card.height_mm">Height (mm)</span>
                     <input class="paper-h" type="number" step="0.1" min="10" value="297" />
                   </label>
                 </div>
@@ -427,50 +443,50 @@
             </section>
             <section class="card-section collapsed" data-section="margins">
               <header class="card-section-head">
-                <span class="card-section-title">Page Margins</span>
-                <button class="icon-btn card-section-reset" data-reset="margins" title="Reset margins" aria-label="Reset margins">↺</button>
+                <span class="card-section-title" data-i18n="card.margins">Page Margins</span>
+                <button class="icon-btn card-section-reset" data-reset="margins" title="Reset margins" aria-label="Reset margins" data-i18n-title="a11y.reset_margins" data-i18n-aria-label="a11y.reset_margins">↺</button>
                 <span class="card-section-caret" aria-hidden="true">▼</span>
               </header>
               <div class="card-section-body">
                 <div class="margin-grid">
-                  <label><input type="number" class="margin-top" step="0.5" min="0" value="0" /><span>Top (mm)</span></label>
-                  <label><input type="number" class="margin-bottom" step="0.5" min="0" value="0" /><span>Bottom (mm)</span></label>
-                  <label><input type="number" class="margin-left" step="0.5" min="0" value="0" /><span>Left (mm)</span></label>
-                  <label><input type="number" class="margin-right" step="0.5" min="0" value="0" /><span>Right (mm)</span></label>
+                  <label><input type="number" class="margin-top" step="0.5" min="0" value="0" /><span data-i18n="card.margin_top">Top (mm)</span></label>
+                  <label><input type="number" class="margin-bottom" step="0.5" min="0" value="0" /><span data-i18n="card.margin_bottom">Bottom (mm)</span></label>
+                  <label><input type="number" class="margin-left" step="0.5" min="0" value="0" /><span data-i18n="card.margin_left">Left (mm)</span></label>
+                  <label><input type="number" class="margin-right" step="0.5" min="0" value="0" /><span data-i18n="card.margin_right">Right (mm)</span></label>
                 </div>
               </div>
             </section>
             <section class="card-section collapsed" data-section="transform">
               <header class="card-section-head">
-                <span class="card-section-title">Transform</span>
-                <button class="icon-btn card-section-reset" data-reset="transform" title="Reset transform" aria-label="Reset transform">↺</button>
+                <span class="card-section-title" data-i18n="card.transform">Transform</span>
+                <button class="icon-btn card-section-reset" data-reset="transform" title="Reset transform" aria-label="Reset transform" data-i18n-title="a11y.reset_transform" data-i18n-aria-label="a11y.reset_transform">↺</button>
                 <span class="card-section-caret" aria-hidden="true">▼</span>
               </header>
               <div class="card-section-body">
                 <div class="slider-grid">
                   <label>
-                    <span>Scale</span>
+                    <span data-i18n="card.scale">Scale</span>
                     <div class="slider-row">
                       <input type="range" class="transform-scale-slider" step="0.01" min="0.01" max="5" value="1" />
                       <input type="number" class="transform-scale" step="0.01" min="0.01" max="5" value="1.00" />
                     </div>
                   </label>
                   <label>
-                    <span>Rotation (°)</span>
+                    <span data-i18n="card.rotation">Rotation (°)</span>
                     <div class="slider-row">
                       <input type="range" class="transform-rotation-slider" step="1" min="0" max="360" value="0" />
                       <input type="number" class="transform-rotation" step="1" min="0" max="360" value="0" />
                     </div>
                   </label>
                   <label>
-                    <span>Offset X (mm)</span>
+                    <span data-i18n="card.offset_x">Offset X (mm)</span>
                     <div class="slider-row">
                       <input type="range" class="transform-offset-x-slider" step="0.5" value="0" />
                       <input type="number" class="transform-offset-x" step="0.5" value="0" />
                     </div>
                   </label>
                   <label>
-                    <span>Offset Y (mm)</span>
+                    <span data-i18n="card.offset_y">Offset Y (mm)</span>
                     <div class="slider-row">
                       <input type="range" class="transform-offset-y-slider" step="0.5" value="0" />
                       <input type="number" class="transform-offset-y" step="0.5" value="0" />
@@ -481,34 +497,34 @@
             </section>
             <section class="card-section collapsed" data-section="optimize">
               <header class="card-section-head">
-                <span class="card-section-title">Optimization (vpype)</span>
-                <button class="icon-btn card-section-reset" data-reset="optimize" title="Restore optimization defaults" aria-label="Restore optimization defaults">↺</button>
+                <span class="card-section-title" data-i18n="card.optimize_title">Optimization (vpype)</span>
+                <button class="icon-btn card-section-reset" data-reset="optimize" title="Restore optimization defaults" aria-label="Restore optimization defaults" data-i18n-title="a11y.restore_optimize" data-i18n-aria-label="a11y.restore_optimize">↺</button>
                 <span class="card-section-caret" aria-hidden="true">▼</span>
               </header>
               <div class="card-section-body">
                 <label class="inline-check">
                   <input type="checkbox" class="optimize" />
-                  <span>Optimize SVG before plotting</span>
+                  <span data-i18n="optimize.enable">Optimize SVG before plotting</span>
                 </label>
                 <div class="optimize-options">
                   <label class="inline-check">
                     <input type="checkbox" class="optimize-linemerge" />
-                    <span>Merge nearby endpoints (linemerge)</span>
+                    <span data-i18n="optimize.linemerge">Merge nearby endpoints (linemerge)</span>
                   </label>
                   <label class="inline-check">
                     <input type="checkbox" class="optimize-linesimplify" />
-                    <span>Simplify paths (linesimplify)</span>
+                    <span data-i18n="optimize.linesimplify">Simplify paths (linesimplify)</span>
                   </label>
                   <label class="inline-check">
                     <input type="checkbox" class="optimize-linesort" />
-                    <span>Reorder for less travel (linesort)</span>
+                    <span data-i18n="optimize.linesort">Reorder for less travel (linesort)</span>
                   </label>
                   <label class="inline-check">
                     <input type="checkbox" class="optimize-reloop" />
-                    <span>Randomize closed-path start (reloop)</span>
+                    <span data-i18n="optimize.reloop">Randomize closed-path start (reloop)</span>
                   </label>
                   <label class="field">
-                    <span class="field-label">Tolerance (mm) — used by linemerge + linesimplify</span>
+                    <span class="field-label" data-i18n="optimize.tolerance_label">Tolerance (mm) — used by linemerge + linesimplify</span>
                     <input type="number" class="optimize-tolerance" min="0.01" max="10" step="0.01" value="0.10" />
                   </label>
                 </div>
@@ -516,23 +532,23 @@
             </section>
             <section class="card-section" data-section="job">
               <header class="card-section-head">
-                <span class="card-section-title">Job</span>
+                <span class="card-section-title" data-i18n="card.job">Job</span>
                 <span class="card-section-caret" aria-hidden="true">▼</span>
               </header>
               <div class="card-section-body">
                 <div class="multi-layer-options" hidden>
                   <label class="inline-check">
                     <input type="checkbox" class="pause-between-layers" checked />
-                    <span>Pause between layers for pen changes</span>
+                    <span data-i18n="job.pause_between_layers">Pause between layers for pen changes</span>
                   </label>
                 </div>
                 <label class="inline-check">
                   <input type="checkbox" class="pause-after-job" checked />
-                  <span>Pause after this job (for paper / pen change before the next one)</span>
+                  <span data-i18n="job.pause_after_job">Pause after this job (for paper / pen change before the next one)</span>
                 </label>
                 <label class="inline-check">
                   <input type="checkbox" class="delete-on-complete" />
-                  <span>Delete on complete (remove the job from the queue when finished)</span>
+                  <span data-i18n="job.delete_on_complete">Delete on complete (remove the job from the queue when finished)</span>
                 </label>
               </div>
             </section>
@@ -542,6 +558,15 @@
     </article>
   </template>
 
-  <script src="/static/app.js?v=__ASSET_VERSION__"></script>
+  <script src="/static/i18n.js?v=__ASSET_VERSION__"></script>
+  <script>
+    // Load the active-language catalog before app.js so t()/tn() are ready by
+    // the time it runs, then inject app.js.
+    I18N.init().then(function () {
+      var s = document.createElement("script");
+      s.src = "/static/app.js?v=__ASSET_VERSION__";
+      document.body.appendChild(s);
+    });
+  </script>
 </body>
 </html>
