@@ -1393,7 +1393,11 @@ const LAYER_TYPE_ICONS = {
   text: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="11" y2="12"/></svg>`,
   svg: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3.2"/><rect x="7.5" y="7.5" width="6.5" height="6.5"/><polygon points="3,14 9,14 6,9"/></svg>`,
   calibration: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="4.5"/><line x1="8" y1="1.5" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="14.5" y2="8"/></svg>`,
+  image: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><circle cx="5.5" cy="6.5" r="1.1"/><path d="M2.5 11.5 L6 8 L8.5 10.5 L10.5 8.5 L13.5 11.5"/></svg>`,
 };
+// Generic glyph for layer types we don't render a dedicated icon for yet
+// (e.g. a not-yet-supported "image" layer) — a neutral rounded square.
+const LAYER_TYPE_FALLBACK_ICON = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/></svg>`;
 // CSS color string → "#rrggbb", or null when it can't be parsed (named
 // colors, gradients). getComputedStyle yields rgb()/rgba() forms; the SVG's
 // own attributes may carry #rgb / #rrggbb / #rrggbbaa.
@@ -1480,10 +1484,18 @@ function layerSwatch(type, penHex, pageHex) {
   const page = pageHex || "#ffffff";
   const inner = (type && LAYER_TYPE_ICONS[type])
     ? LAYER_TYPE_ICONS[type]
-    : `<span class="layer-swatch-dot"></span>`;
+    : type
+      ? LAYER_TYPE_FALLBACK_ICON          // known-but-unsupported type
+      : `<span class="layer-swatch-dot"></span>`;  // no type at all
   // Pen == page is an invisible plot; a faint halo keeps the icon legible.
   const faint = penHex && pageHex && penHex === pageHex ? " faint" : "";
-  const typeLabel = type ? t(`layer_type.${type}`) : "";
+  // Untranslated types (t() echoes the key back) fall back to the raw name.
+  let typeLabel = "";
+  if (type) {
+    const key = `layer_type.${type}`;
+    const tr = t(key);
+    typeLabel = tr === key ? type : tr;
+  }
   const title = penHex
     ? t("swatch.pen_color", { hex: penHex }) + (typeLabel ? ` · ${typeLabel}` : "")
     : typeLabel;
@@ -1801,9 +1813,24 @@ function updatePenCursor(msg) {
   const cursor = active.querySelector(".pen-cursor");
   const job = serverState.queue.find((j) => j.job_id === serverState.active_id);
   if (!cursor || !job) return;
+  const w = job.paper_width_mm, h = job.paper_height_mm;
+  // AxiDraw's auto_rotate (on by default) rotates portrait documents
+  // (height > width) 90° CCW onto the landscape bed, so the reported physical
+  // pen position arrives in that rotated frame: phys_x runs along the document
+  // height and phys_y runs (inverted) along the document width. Map it back
+  // into the upright document frame the preview shows, otherwise the dot
+  // tracks the wrong axis and appears to move up/down instead of following.
+  let leftPct, topPct;
+  if (h > w) {
+    leftPct = ((w - msg.y_mm) / w) * 100;
+    topPct = (msg.x_mm / h) * 100;
+  } else {
+    leftPct = (msg.x_mm / w) * 100;
+    topPct = (msg.y_mm / h) * 100;
+  }
   cursor.hidden = false;
-  cursor.style.left = `${(msg.x_mm / job.paper_width_mm) * 100}%`;
-  cursor.style.top = `${(msg.y_mm / job.paper_height_mm) * 100}%`;
+  cursor.style.left = `${leftPct}%`;
+  cursor.style.top = `${topPct}%`;
   cursor.classList.toggle("pen-down", !!msg.pen_down);
 }
 

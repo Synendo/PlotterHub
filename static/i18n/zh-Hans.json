@@ -166,6 +166,7 @@
   "layer_type.text": "文字",
   "layer_type.svg": "svg",
   "layer_type.calibration": "校准",
+  "layer_type.image": "图像",
   "swatch.pen_color": "笔色 {hex}",
 
   "apierror.not_svg": "不是 SVG 文件。请拖入一个 .svg 文件。",

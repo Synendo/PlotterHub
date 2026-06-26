@@ -184,6 +184,7 @@
   "layer_type.text": "text",
   "layer_type.svg": "svg",
   "layer_type.calibration": "calibration",
+  "layer_type.image": "image",
   "swatch.pen_color": "Pen color {hex}",
 
   "apierror.not_svg": "Not an SVG file. Please drop a .svg.",

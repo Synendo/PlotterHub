@@ -100,7 +100,7 @@ All fields are optional. Unspecified booleans, speeds, and `selected` flags fall
     {
       "index": 0,                     // Required — the 0-based Inkscape layer index.
       "name": "string",               // Optional — overrides the embedded `inkscape:label`.
-      "type": "pattern" | "text" | "svg" | "calibration",  // Optional — drives a small icon in the UI.
+      "type": "pattern" | "text" | "svg" | "calibration" | "image",  // Optional — drives a small icon in the UI. Other values are accepted and fall back to a generic icon.
       "selected": false,              // Optional, default true. `false` excludes the layer from the plot.
       "speed_pendown": 25,            // Optional 1–110 — pen-down speed for this layer only.
       "speed_penup": 75,              // Optional 1–110 — pen-up speed for this layer only.
@@ -135,6 +135,7 @@ Layer types are decorative — the icon is shown in the layer list:
 | `text` | Text rendered as paths | text bars |
 | `svg` | A vector glyph or composed shape | triangle/circle/square |
 | `calibration` | Registration / alignment marks | scope (crosshair-in-circle) |
+| `image` | A raster / photo-derived layer | photo (mountains & sun) |
 
 #### Response
 

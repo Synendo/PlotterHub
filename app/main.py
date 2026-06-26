@@ -385,7 +385,10 @@ class ApiPaperSize(BaseModel):
 class ApiLayer(BaseModel):
     index: int = Field(ge=0)
     name: str | None = None
-    type: Literal["pattern", "text", "svg", "calibration"] | None = None
+    # Known types ("pattern", "text", "svg", "calibration", "image") get a
+    # dedicated icon in the web UI. Any other value is accepted rather than
+    # rejected, and falls back to a generic icon.
+    type: str | None = None
     selected: bool | None = None  # None == not specified == default True
     # Optional per-layer speed overrides. When set, they take precedence over
     # the job (document) / system speeds for that layer — see _run_job, which

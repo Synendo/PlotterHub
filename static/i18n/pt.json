@@ -166,6 +166,7 @@
   "layer_type.text": "texto",
   "layer_type.svg": "svg",
   "layer_type.calibration": "calibração",
+  "layer_type.image": "imagem",
   "swatch.pen_color": "Cor da caneta {hex}",
 
   "apierror.not_svg": "Não é um ficheiro SVG. Larga aqui um .svg.",

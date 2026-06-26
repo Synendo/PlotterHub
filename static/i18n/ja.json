@@ -166,6 +166,7 @@
   "layer_type.text": "テキスト",
   "layer_type.svg": "svg",
   "layer_type.calibration": "キャリブレーション",
+  "layer_type.image": "画像",
   "swatch.pen_color": "ペンの色 {hex}",
 
   "apierror.not_svg": "SVGファイルではありません。.svgファイルをドロップしてください。",
