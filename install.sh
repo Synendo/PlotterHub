@@ -76,6 +76,16 @@ else
     echo "    warning: avahi-daemon is not running; '.local' hostname resolution may not work"
 fi
 
+# systemd as the active init. This installer manages the service exclusively
+# through systemctl; on a system that boots a different init as PID 1 those
+# calls may silently no-op and the service never actually starts, or something
+# else ends up answering on the local box. Raspberry Pi OS is systemd-booted.
+if [ "$(ps -p 1 -o comm= 2>/dev/null)" != "systemd" ]; then
+    echo "    warning: PID 1 is not systemd; this installer requires a systemd-booted system."
+    echo "             The service is managed via 'systemctl' and will not start under another init."
+    echo "             Plotter Hub is only tested on Raspberry Pi OS."
+fi
+
 # If a previous install is already running, stop it so its own port-80
 # binding doesn't look like a conflict during the port probe below.
 if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
@@ -163,10 +173,47 @@ run_sudo systemctl restart "$SERVICE_NAME"
 echo ">>> Waiting for service to come up"
 sleep 3
 if run_sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+    echo ">>> Service is running"
+
+    # Confirm the listener is actually reachable from the LAN and not just from
+    # the local box. A socket bound to 127.0.0.1/::1 answers the machine's own
+    # browser but is invisible to every other host — the classic "loads locally,
+    # never loads from another machine" report. We bind to 0.0.0.0 in the unit,
+    # so anything else here means a stale/overridden unit or a hand-started copy.
+    #
+    # Poll rather than check once: systemd marks the Type=simple unit active the
+    # moment the process forks, but uvicorn's heavy imports (numpy/scipy/vpype)
+    # can delay the actual socket bind by 10s+ on a Pi, so a single check races
+    # startup and cries wolf.
+    LISTEN=""
+    for _ in $(seq 1 15); do
+        LISTEN="$(ss -ltn 2>/dev/null | awk -v p=":$PORT\$" '$4 ~ p {print $4}')"
+        [ -n "$LISTEN" ] && break
+        sleep 2
+    done
+    if [ -z "$LISTEN" ]; then
+        echo "!!! warning: nothing is listening on port $PORT even though the service is active."
+        echo "             Inspect with: journalctl -u $SERVICE_NAME -n 50"
+    elif ! printf '%s\n' "$LISTEN" | grep -qE '^(0\.0\.0\.0|\*|\[::\]):'"$PORT"'$'; then
+        echo "!!! warning: port $PORT is bound to loopback only ($LISTEN)."
+        echo "             It will load on this machine but NOT from other machines on the network."
+        echo "             Expected 0.0.0.0:$PORT — check for a stale or overridden systemd unit."
+    fi
+
     URL="http://$(hostname).local"
     [ "$PORT" != "80" ] && URL="$URL:$PORT"
-    echo ">>> Service is running"
-    echo ">>> Open $URL"
+    echo ">>> Open $URL from any machine on the network"
+
+    # Also print the raw LAN IP as a fallback: '.local' is the address to use
+    # (mDNS follows the Pi across DHCP lease changes, the IP may not), but if a
+    # client can't resolve '.local' the IP still gets them in — and printing it
+    # makes a port-80 -> 8080 fallback obvious too.
+    LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    if [ -n "$LAN_IP" ]; then
+        IP_URL="http://$LAN_IP"
+        [ "$PORT" != "80" ] && IP_URL="$IP_URL:$PORT"
+        echo ">>> If a device can't resolve .local, use this Pi's IP instead: $IP_URL (may change on reboot)"
+    fi
 else
     echo "!!! Service failed to start; inspect with: journalctl -u $SERVICE_NAME -n 50"
     exit 1
