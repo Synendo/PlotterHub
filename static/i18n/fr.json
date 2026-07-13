@@ -167,6 +167,7 @@
   "layer_type.svg": "svg",
   "layer_type.calibration": "calibrage",
   "layer_type.image": "image",
+  "layer_type.map": "carte",
   "swatch.pen_color": "Couleur du stylo {hex}",
 
   "apierror.not_svg": "Ce n'est pas un fichier SVG. Dépose un .svg.",

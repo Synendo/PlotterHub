@@ -1394,6 +1394,7 @@ const LAYER_TYPE_ICONS = {
   svg: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3.2"/><rect x="7.5" y="7.5" width="6.5" height="6.5"/><polygon points="3,14 9,14 6,9"/></svg>`,
   calibration: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="4.5"/><line x1="8" y1="1.5" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="14.5" y2="8"/></svg>`,
   image: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><circle cx="5.5" cy="6.5" r="1.1"/><path d="M2.5 11.5 L6 8 L8.5 10.5 L10.5 8.5 L13.5 11.5"/></svg>`,
+  map: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2.5 L2 4 V13.5 L6 12 L10 13.5 L14 12 V2.5 L10 4 Z"/><line x1="6" y1="2.5" x2="6" y2="12"/><line x1="10" y1="4" x2="10" y2="13.5"/></svg>`,
 };
 // Generic glyph for layer types we don't render a dedicated icon for yet
 // (e.g. a not-yet-supported "image" layer) — a neutral rounded square.

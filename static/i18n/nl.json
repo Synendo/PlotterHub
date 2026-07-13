@@ -185,6 +185,7 @@
   "layer_type.svg": "svg",
   "layer_type.calibration": "kalibratie",
   "layer_type.image": "afbeelding",
+  "layer_type.map": "kaart",
   "swatch.pen_color": "Penkleur {hex}",
 
   "apierror.not_svg": "Geen SVG-bestand. Sleep een .svg hierheen.",

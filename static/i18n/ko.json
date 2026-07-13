@@ -167,6 +167,7 @@
   "layer_type.svg": "svg",
   "layer_type.calibration": "보정",
   "layer_type.image": "이미지",
+  "layer_type.map": "지도",
   "swatch.pen_color": "펜 색상 {hex}",
 
   "apierror.not_svg": "SVG 파일이 아니에요. .svg 파일을 올려주세요.",
