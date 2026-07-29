@@ -1091,7 +1091,8 @@ def _run_staged_loop(job_id: str, svg_path: Path, first_mode: str) -> None:
         # Release the energized stepper motors now that the full job is done;
         # keeping them enabled during plotting and layer pauses preserves position,
         # while disabling them afterward reduces heat, noise, and power use.
-        _disable_ebb_motors()
+        if job.get("disable_motors_on_complete", False):
+            _disable_ebb_motors()
         if job.get("delete_on_complete", False):
             from .main import delete_svg_files
             svg_id = job.get("svg_id")

@@ -48,6 +48,7 @@ _SETTINGS: list[_Setting] = [
     _Setting("pause_between_layers_default", bool, True),
     _Setting("pause_after_job_default", bool, True),
     _Setting("delete_on_complete_default", bool, False),
+    _Setting("disable_motors_on_complete_default", bool, False),
     _Setting("speed_pendown_default", int, 25, lambda v: 1 <= v <= 110),
     _Setting("speed_penup_default", int, 75, lambda v: 1 <= v <= 110),
     _Setting("acceleration_default", int, 75, lambda v: 1 <= v <= 100),

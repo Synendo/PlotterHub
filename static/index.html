@@ -225,6 +225,11 @@
             <input type="checkbox" id="settings-delete-on-complete" />
             <span data-i18n="job.delete_on_complete">Delete on complete (remove the job from the queue when finished)</span>
           </label>
+          <label class="inline-check">
+            <input type="checkbox" id="settings-disable-motors-on-complete" />
+            <span data-i18n="job.disable_motors_on_complete">Disable Motors on Complete</span>
+          </label>
+          <p class="muted" data-i18n="job.disable_motors_on_complete.description">Releases the motors after the job finishes to reduce heat, noise, and power use; the carriage will no longer be held in place.</p>
         </div>
       </section>
 
