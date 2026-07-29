@@ -168,6 +168,7 @@
   "layer_type.calibration": "Kalibrierung",
   "layer_type.image": "Bild",
   "layer_type.map": "Karte",
+  "layer_type.model": "3D-Modell",
   "swatch.pen_color": "Stiftfarbe {hex}",
 
   "apierror.not_svg": "Keine SVG-Datei. Bitte leg eine .svg ab.",
