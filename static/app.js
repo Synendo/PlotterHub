@@ -423,6 +423,7 @@ function createCardForJob(job) {
   card.querySelector(".pause-between-layers").checked = job.pause_between_layers;
   card.querySelector(".pause-after-job").checked = job.pause_after_job;
   card.querySelector(".delete-on-complete").checked = !!job.delete_on_complete;
+  card.querySelector(".disable-motors-on-complete").checked = !!job.disable_motors_on_complete;
   card.querySelector(".optimize").checked = !!job.optimize_svg;
   card.querySelector(".optimize-linemerge").checked = job.optimize_svg_linemerge !== false;
   card.querySelector(".optimize-linesimplify").checked = job.optimize_svg_linesimplify !== false;
@@ -467,6 +468,7 @@ function createCardForJob(job) {
   card.querySelector(".pause-between-layers").addEventListener("change", () => queueCardUpdate(card));
   card.querySelector(".pause-after-job").addEventListener("change", () => queueCardUpdate(card));
   card.querySelector(".delete-on-complete").addEventListener("change", () => queueCardUpdate(card));
+  card.querySelector(".disable-motors-on-complete").addEventListener("change", () => queueCardUpdate(card));
   card.querySelector(".optimize").addEventListener("change", () => {
     // Master ON while every sub-option is off would be a no-op pipeline —
     // re-enable all four so the toggle actually does something.
@@ -1217,6 +1219,7 @@ async function sendCardUpdate(card, immediateUpdates) {
     updates.pause_between_layers = card.querySelector(".pause-between-layers").checked;
     updates.pause_after_job = card.querySelector(".pause-after-job").checked;
     updates.delete_on_complete = card.querySelector(".delete-on-complete").checked;
+    updates.disable_motors_on_complete = card.querySelector(".disable-motors-on-complete").checked;
     updates.optimize_svg = card.querySelector(".optimize").checked;
     updates.optimize_svg_linemerge = card.querySelector(".optimize-linemerge").checked;
     updates.optimize_svg_linesimplify = card.querySelector(".optimize-linesimplify").checked;
