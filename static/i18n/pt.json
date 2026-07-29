@@ -168,6 +168,7 @@
   "layer_type.calibration": "calibração",
   "layer_type.image": "imagem",
   "layer_type.map": "mapa",
+  "layer_type.model": "modelo 3D",
   "swatch.pen_color": "Cor da caneta {hex}",
 
   "apierror.not_svg": "Não é um ficheiro SVG. Larga aqui um .svg.",

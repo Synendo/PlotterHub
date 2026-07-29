@@ -186,6 +186,7 @@
   "layer_type.calibration": "calibration",
   "layer_type.image": "image",
   "layer_type.map": "map",
+  "layer_type.model": "3D model",
   "swatch.pen_color": "Pen color {hex}",
 
   "apierror.not_svg": "Not an SVG file. Please drop a .svg.",
