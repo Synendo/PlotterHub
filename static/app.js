@@ -784,6 +784,8 @@ function renderPreview(card, job) {
     previewEl.dataset.rendered = "1";
   }
   card.querySelector(".svg-dims").textContent = `${formatDim(ctx.svg.width)} × ${formatDim(ctx.svg.height)}`;
+  // Optional paper stock (API-set), right-aligned opposite the size.
+  card.querySelector(".preview-paper-name").textContent = job.paper_name || "";
   updatePreviewTransform(card, job);
   syncPreviewLayers(card, job);
 }
@@ -1041,6 +1043,8 @@ function renderLayers(card, job) {
     const checked = selected.has(layer.index);
     const override = overrides.get(layer.index);
     const displayLabel = (override && override.label) || layer.label;
+    // Optional pen name (API-set), trailing the layer name in grey.
+    const penName = (override && override.pen_name) || "";
     const swatch = layerSwatch(
       override && override.type,
       (ctx.svg.layerColors || {})[layer.index] || null,
@@ -1050,7 +1054,9 @@ function renderLayers(card, job) {
       <label>
         <input type="checkbox" data-index="${layer.index}" ${checked ? "checked" : ""} />
         ${swatch}
-        <span class="layer-label">${escapeHtml(displayLabel)}</span>
+        <span class="layer-label">${escapeHtml(displayLabel)}${
+          penName ? `<span class="layer-pen">${escapeHtml(penName)}</span>` : ""
+        }</span>
       </label>`;
     ul.appendChild(li);
   }
@@ -1074,6 +1080,7 @@ function renderLayers(card, job) {
           selected: checkedIndices.has(l.index),
         };
         if (ovr && ovr.type) sel.type = ovr.type;
+        if (ovr && ovr.pen_name) sel.pen_name = ovr.pen_name;
         // Carry through API-set per-layer speed overrides — there's no UI
         // control for them, so a checkbox toggle here must not drop them.
         for (const k of ["speed_pendown", "speed_penup", "acceleration"]) {
@@ -1121,9 +1128,13 @@ function renderStages(card, job) {
     const icons = (s.layer_indices || [])
       .map((idx) => layerSwatch(typeByIndex.get(idx), layerColors[idx] || null, pageColor))
       .join("");
+    // Same trailing grey pen name as the layer list above.
+    const penName = stagePenName(job, s);
     li.innerHTML = `<span class="stage-num">${i + 1}</span>
       ${icons}
-      <span class="stage-label">${escapeHtml((s.labels || []).join(", "))}</span>
+      <span class="stage-label">${escapeHtml((s.labels || []).join(", "))}${
+        penName ? `<span class="layer-pen">${escapeHtml(penName)}</span>` : ""
+      }</span>
       <span class="stage-status">${escapeHtml(stageStatusLabel(s.status))}</span>`;
     ol.appendChild(li);
   });
@@ -1286,6 +1297,34 @@ async function postAction(path) {
   }
 }
 
+// The pen loaded for a stage, or null when it's unknown. A stage normally
+// holds a single layer (pause_between_layers is the only case where stages
+// are shown), but a multi-layer stage still has one pen only if every one of
+// its layers names the same one.
+function stagePenName(job, stage) {
+  if (!stage) return null;
+  const penByIndex = new Map(
+    (job.layer_selections || []).map((s) => [s.index, s.pen_name])
+  );
+  const pens = (stage.layer_indices || []).map((i) => penByIndex.get(i) || "");
+  if (!pens.length || pens.some((p) => !p)) return null;
+  return pens.every((p) => p === pens[0]) ? pens[0] : null;
+}
+
+// At an awaiting_pen_change pause `current_stage_index` already points at the
+// *next* stage, so the one just finished is the entry before it. Name the pen
+// to swap to when we know it — and say "if needed" when we don't know what's
+// in the plotter right now (no pen on the finished stage).
+function penChangeMessage(job) {
+  const stages = job.stages || [];
+  const nextPen = stagePenName(job, stages[job.current_stage_index]);
+  if (!nextPen) return t("msg.awaiting_pen_change");
+  const currentPen = stagePenName(job, stages[job.current_stage_index - 1]);
+  if (!currentPen) return t("msg.awaiting_pen_change_to_optional", { pen: nextPen });
+  if (currentPen === nextPen) return t("msg.awaiting_pen_change");
+  return t("msg.awaiting_pen_change_to", { pen: nextPen });
+}
+
 function applyTopControls() {
   const s = serverState;
   const active = s.active_id ? s.queue.find((j) => j.job_id === s.active_id) : null;
@@ -1325,7 +1364,7 @@ function applyTopControls() {
     statusEl.className = `status ${status}`;
     let msg = "";
     if (active.error) msg = t("msg.error_prefix", { error: active.error });
-    else if (status === "awaiting_pen_change") msg = t("msg.awaiting_pen_change");
+    else if (status === "awaiting_pen_change") msg = penChangeMessage(active);
     else if (status === "awaiting_optimize") msg = t("msg.awaiting_optimize");
     else if (status === "optimizing") msg = t("msg.optimizing");
     topMessage.textContent = msg;

@@ -106,6 +106,8 @@
   "queue.empty": "将 SVG 拖到上方即可开始。",
   "msg.awaiting_next_job": "已准备好下一任务。装纸／换笔后点击继续。",
   "msg.awaiting_pen_change": "如有需要请换笔，然后点击继续绘制下一图层。",
+  "msg.awaiting_pen_change_to": "请将笔更换为“{pen}”，然后点击继续绘制下一图层。",
+  "msg.awaiting_pen_change_to_optional": "如有需要，请将笔更换为“{pen}”，然后点击继续绘制下一图层。",
   "msg.awaiting_optimize": "等待 SVG 优化完成…",
   "msg.optimizing": "正在优化 SVG…",
   "msg.error_prefix": "错误：{error}",

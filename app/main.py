@@ -163,6 +163,7 @@ class JobCreate(_OptimizeCreateFields):
     filename: str = "upload.svg"
     name: str | None = None
     paper_size_name: str | None = None
+    paper_name: str | None = None
     layer_selections: list[dict]
     pause_between_layers: bool = True
     pause_after_job: bool = True
@@ -248,6 +249,7 @@ class JobUpdate(_OptimizeOptionalFields):
     layer_selections: list[dict] | None = None
     name: str | None = None
     paper_size_name: str | None = None
+    paper_name: str | None = None
     pause_between_layers: bool | None = None
     pause_after_job: bool | None = None
     delete_on_complete: bool | None = None
@@ -382,6 +384,17 @@ class ApiPaperSize(BaseModel):
     orientation: Literal["portrait", "landscape"] | None = None
 
 
+class ApiPaper(BaseModel):
+    """The physical paper stock (brand / colour / weight), as opposed to
+    ``ApiPaperSize`` which carries the dimensions. Display-only."""
+    name: str | None = None
+
+
+class ApiPen(BaseModel):
+    """The pen loaded for a layer. Display-only."""
+    name: str | None = None
+
+
 class ApiLayer(BaseModel):
     index: int = Field(ge=0)
     name: str | None = None
@@ -396,11 +409,15 @@ class ApiLayer(BaseModel):
     speed_pendown: int | None = None
     speed_penup: int | None = None
     acceleration: int | None = None
+    # Display-only: the pen loaded for this layer, shown after the layer name.
+    pen: ApiPen | None = None
 
 
 class ApiJobMetadata(_OptimizeOptionalFields):
     name: str | None = None
     paper_size: ApiPaperSize | None = None
+    # Display-only: the paper stock, shown under the preview next to the size.
+    paper: ApiPaper | None = None
     layers: list[ApiLayer] = Field(default_factory=list)
     pause_between_layers: bool | None = None
     pause_after_job: bool | None = None
@@ -490,6 +507,8 @@ async def api_create_job(file: UploadFile = File(...),
             sel["type"] = ovr.type
         if ovr and ovr.selected is False:
             sel["selected"] = False
+        if ovr and ovr.pen and ovr.pen.name:
+            sel["pen_name"] = ovr.pen.name
         # Optional per-layer speed overrides — clamped to the same ranges as
         # the job-level speeds (out-of-range values corrected, not rejected).
         for key in ("speed_pendown", "speed_penup", "acceleration"):
@@ -514,6 +533,7 @@ async def api_create_job(file: UploadFile = File(...),
         "filename": file.filename or "upload.svg",
         "name": meta.name,
         "paper_size_name": paper_name,
+        "paper_name": meta.paper.name if meta.paper else None,
         "layer_selections": layer_selections,
         "pause_between_layers": pick(meta.pause_between_layers, config.PAUSE_BETWEEN_LAYERS_DEFAULT),
         "pause_after_job": pick(meta.pause_after_job, config.PAUSE_AFTER_JOB_DEFAULT),

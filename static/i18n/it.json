@@ -106,6 +106,8 @@
   "queue.empty": "Trascina un SVG qui sopra per iniziare.",
   "msg.awaiting_next_job": "Pronto per il prossimo lavoro. Carica la carta / cambia penna, poi clicca Continua.",
   "msg.awaiting_pen_change": "Cambia la penna se necessario, poi clicca Continua per il prossimo layer.",
+  "msg.awaiting_pen_change_to": "Cambia la penna con «{pen}», poi clicca Continua per il prossimo layer.",
+  "msg.awaiting_pen_change_to_optional": "Cambia la penna con «{pen}» se necessario, poi clicca Continua per il prossimo layer.",
   "msg.awaiting_optimize": "In attesa del completamento dell'ottimizzazione SVG…",
   "msg.optimizing": "Ottimizzazione SVG…",
   "msg.error_prefix": "Errore: {error}",

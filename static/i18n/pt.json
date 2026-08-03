@@ -106,6 +106,8 @@
   "queue.empty": "Larga um SVG acima para começar.",
   "msg.awaiting_next_job": "Pronto para o próximo trabalho. Coloca papel / troca a caneta e clica em Continuar.",
   "msg.awaiting_pen_change": "Troca a caneta se necessário e clica em Continuar para a próxima camada.",
+  "msg.awaiting_pen_change_to": "Troca a caneta para «{pen}» e clica em Continuar para a próxima camada.",
+  "msg.awaiting_pen_change_to_optional": "Troca a caneta para «{pen}» se necessário e clica em Continuar para a próxima camada.",
   "msg.awaiting_optimize": "A aguardar que a otimização do SVG termine…",
   "msg.optimizing": "A otimizar SVG…",
   "msg.error_prefix": "Erro: {error}",

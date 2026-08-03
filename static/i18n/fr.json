@@ -106,6 +106,8 @@
   "queue.empty": "Dépose un SVG ci-dessus pour commencer.",
   "msg.awaiting_next_job": "Prêt pour la tâche suivante. Charge le papier / change le stylo, puis clique sur Continuer.",
   "msg.awaiting_pen_change": "Change le stylo si besoin, puis clique sur Continuer pour le calque suivant.",
+  "msg.awaiting_pen_change_to": "Change le stylo pour « {pen} », puis clique sur Continuer pour le calque suivant.",
+  "msg.awaiting_pen_change_to_optional": "Change le stylo pour « {pen} » si besoin, puis clique sur Continuer pour le calque suivant.",
   "msg.awaiting_optimize": "En attente de la fin de l'optimisation SVG…",
   "msg.optimizing": "Optimisation du SVG…",
   "msg.error_prefix": "Erreur : {error}",

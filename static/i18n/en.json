@@ -115,6 +115,8 @@
 
   "msg.awaiting_next_job": "Ready for the next job. Load paper / swap pen, then click Continue.",
   "msg.awaiting_pen_change": "Swap the pen if needed, then click Continue for the next layer.",
+  "msg.awaiting_pen_change_to": "Swap the pen to \"{pen}\", then click Continue for the next layer.",
+  "msg.awaiting_pen_change_to_optional": "Swap the pen to \"{pen}\" if needed, then click Continue for the next layer.",
   "msg.awaiting_optimize": "Waiting for SVG optimization to finish…",
   "msg.optimizing": "Optimizing SVG…",
   "msg.error_prefix": "Error: {error}",

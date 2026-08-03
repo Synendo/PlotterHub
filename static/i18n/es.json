@@ -106,6 +106,8 @@
   "queue.empty": "Suelta un SVG arriba para empezar.",
   "msg.awaiting_next_job": "Listo para el siguiente trabajo. Carga papel / cambia la pluma y luego haz clic en Continuar.",
   "msg.awaiting_pen_change": "Cambia la pluma si es necesario y luego haz clic en Continuar para la siguiente capa.",
+  "msg.awaiting_pen_change_to": "Cambia la pluma a «{pen}» y luego haz clic en Continuar para la siguiente capa.",
+  "msg.awaiting_pen_change_to_optional": "Cambia la pluma a «{pen}» si es necesario y luego haz clic en Continuar para la siguiente capa.",
   "msg.awaiting_optimize": "Esperando a que termine la optimización del SVG…",
   "msg.optimizing": "Optimizando SVG…",
   "msg.error_prefix": "Error: {error}",

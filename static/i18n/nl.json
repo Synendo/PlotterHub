@@ -115,6 +115,8 @@
 
   "msg.awaiting_next_job": "Klaar voor de volgende taak. Plaats papier / wissel de pen en klik op Doorgaan.",
   "msg.awaiting_pen_change": "Wissel zo nodig de pen en klik op Doorgaan voor de volgende laag.",
+  "msg.awaiting_pen_change_to": "Wissel de pen naar “{pen}” en klik op Doorgaan voor de volgende laag.",
+  "msg.awaiting_pen_change_to_optional": "Wissel zo nodig de pen naar “{pen}” en klik op Doorgaan voor de volgende laag.",
   "msg.awaiting_optimize": "Wachten tot de SVG-optimalisatie klaar is…",
   "msg.optimizing": "SVG optimaliseren…",
   "msg.error_prefix": "Fout: {error}",

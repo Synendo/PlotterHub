@@ -66,6 +66,10 @@ All fields are optional. Unspecified booleans, speeds, and `selected` flags fall
     "orientation": "portrait" | "landscape"  // Optional; swaps width/height if it disagrees.
   },
 
+  "paper": {                          // Optional — the paper *stock*, not its size.
+    "name": "FABRIANO Black Black 300g"  // Display only; shown under the preview, opposite the size.
+  },
+
   // Job options — omit any field to inherit the corresponding server default.
   "pause_between_layers": true,       // Pause for pen change between selected layers (multi-layer only).
   "pause_after_job":      true,       // Pause after this job finishes (paper / pen swap before next).
@@ -104,7 +108,10 @@ All fields are optional. Unspecified booleans, speeds, and `selected` flags fall
       "selected": false,              // Optional, default true. `false` excludes the layer from the plot.
       "speed_pendown": 25,            // Optional 1–110 — pen-down speed for this layer only.
       "speed_penup": 75,              // Optional 1–110 — pen-up speed for this layer only.
-      "acceleration": 75              // Optional 1–100 — acceleration for this layer only.
+      "acceleration": 75,             // Optional 1–100 — acceleration for this layer only.
+      "pen": {                        // Optional — the pen loaded for this layer.
+        "name": "Uni Posca PC-5M White"  // Display only; shown after the layer name.
+      }
     }
   ]
 }
@@ -119,9 +126,18 @@ All fields are optional. Unspecified booleans, speeds, and `selected` flags fall
 
 Known presets: `A0`–`A5`, `B0`–`B5`, `Letter`, `Legal`, `Ledger`, `ANSI-C`, `ANSI-D`, `ANSI-E`. Any other `name` without explicit dimensions returns `400`.
 
+##### Paper stock and pens
+
+`paper.name` and `layers[].pen.name` are free-form descriptive strings — they don't affect plotting, they just record what's physically loaded. Both are optional; omit them and the web UI shows nothing in their place. They are stored on the job record as `paper_name` and, per layer, `pen_name`.
+
+In the web UI the paper stock appears under the page preview, right-aligned opposite the paper size. And the pen name trails its layer's name in the layer list:
+
+
 ##### Layer overrides
 
 `layers[]` is keyed by `index` (matching the SVG's Inkscape layer order, 0-based). Layers not listed keep the SVG's embedded `inkscape:label`, have no `type`, and are **selected** by default. Listed layers can override `name`, `type`, and `selected` independently — supplying only `type` keeps the embedded label, and supplying only `selected: false` excludes the layer from the plot. If every layer is deselected the request returns `400`.
+
+`pen.name` is a display-only note of the pen loaded for that layer — see [Paper stock and pens](#paper-stock-and-pens).
 
 `speed_pendown`, `speed_penup`, and `acceleration` are optional per-layer speed overrides: when set, they take precedence over the job's (document) and the system's speed settings for that layer only. Each axis falls back independently, so you can override just one. Out-of-range values are clamped, not rejected.
 
@@ -150,9 +166,10 @@ Layer types are decorative — the icon is shown in the layer list:
   "filename": "APITest.svg",
   "name": "API Test (via GD Studio)",
   "paper_size_name": "A3",
+  "paper_name": "FABRIANO Black Black 300g",  // null when `paper` was omitted.
   "layer_selections": [
-    { "index": 0, "label": "Guilloché", "type": "pattern" },
-    { "index": 1, "label": "Text",      "type": "text" },
+    { "index": 0, "label": "Guilloché", "type": "pattern", "pen_name": "Uni Posca PC-5M White" },
+    { "index": 1, "label": "Text",      "type": "text" },   // `pen_name` absent when `pen` was omitted.
     { "index": 2, "label": "Logo",      "type": "svg" }
   ],
   "paper_width_mm": 420.0,             // Always millimetres, regardless of input unit.
@@ -173,7 +190,7 @@ Layer types are decorative — the icon is shown in the layer list:
 curl -X POST http://plotterhub.local/api/v1/jobs \
   -H "X-API-Key: $PLOTTERHUB_API_KEY" \
   -F "file=@/path/to/drawing.svg" \
-  -F 'metadata={"name":"Nightly run","paper_size":{"name":"A3","orientation":"landscape"},"layers":[{"index":0,"name":"Outline","type":"pattern"},{"index":1,"name":"Title","type":"text"}]}'
+  -F 'metadata={"name":"Nightly run","paper_size":{"name":"A3","orientation":"landscape"},"paper":{"name":"FABRIANO Black Black 300g"},"layers":[{"index":0,"name":"Outline","type":"pattern","pen":{"name":"Uni Posca PC-5M White"}},{"index":1,"name":"Title","type":"text"}]}'
 ```
 
 If your shell mangles the inline JSON (extra spaces, broken backslash continuations), put the JSON in a file and reference it:
@@ -260,6 +277,7 @@ Editable fields:
 |---|---|---|
 | `name` | string \| null | Display name override. |
 | `paper_size_name` | string \| null | Display label for the paper size. |
+| `paper_name` | string \| null | Display label for the paper stock (e.g. `"FABRIANO Black Black 300g"`). |
 | `paper_width_mm`, `paper_height_mm` | number | Paper dimensions; always in mm. |
 | `margin_top_mm`, `margin_right_mm`, `margin_bottom_mm`, `margin_left_mm` | number | |
 | `fit_content` | bool | Scale SVG to fit the printable area. |
@@ -272,7 +290,7 @@ Editable fields:
 | `optimize_svg` | bool | Run the vpype optimization pipeline before planning. |
 | `optimize_svg_tolerance_mm` | number | 0.01–10.0 |
 | `optimize_svg_linemerge`, `optimize_svg_linesimplify`, `optimize_svg_linesort`, `optimize_svg_reloop` | bool | Per-step toggles for the vpype pipeline. |
-| `layer_selections` | array | `[{index, label, type?, selected?}]` — drives which layers plot. Entries with `selected: false` are kept in the list (so name/type metadata survives a toggle in the UI) but skipped when planning. |
+| `layer_selections` | array | `[{index, label, type?, selected?, pen_name?}]` — drives which layers plot. Entries with `selected: false` are kept in the list (so name/type metadata survives a toggle in the UI) but skipped when planning. |
 
 Returns the full updated job record. **`409 Conflict`** if the job is currently active (`plotting`, `planning`, `paused`, `awaiting_pen_change`, `homing`).
 

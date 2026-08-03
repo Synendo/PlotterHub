@@ -106,6 +106,8 @@
   "queue.empty": "上に SVG をドロップして始めましょう。",
   "msg.awaiting_next_job": "次のジョブの準備ができました。用紙のセット／ペンの交換を行い、「続行」をクリックしてください。",
   "msg.awaiting_pen_change": "必要に応じてペンを交換し、「続行」をクリックして次のレイヤーへ進みます。",
+  "msg.awaiting_pen_change_to": "ペンを「{pen}」に交換し、「続行」をクリックして次のレイヤーへ進みます。",
+  "msg.awaiting_pen_change_to_optional": "必要に応じてペンを「{pen}」に交換し、「続行」をクリックして次のレイヤーへ進みます。",
   "msg.awaiting_optimize": "SVG の最適化が完了するのを待っています…",
   "msg.optimizing": "SVG を最適化中…",
   "msg.error_prefix": "エラー: {error}",

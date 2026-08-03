@@ -106,6 +106,8 @@
   "queue.empty": "위에 SVG를 끌어다 놓아 시작하세요.",
   "msg.awaiting_next_job": "다음 작업 준비 완료. 종이를 넣거나 펜을 교체한 뒤 계속을 클릭하세요.",
   "msg.awaiting_pen_change": "필요하면 펜을 교체한 뒤 다음 레이어를 위해 계속을 클릭하세요.",
+  "msg.awaiting_pen_change_to": "펜을 “{pen}”(으)로 교체한 뒤 다음 레이어를 위해 계속을 클릭하세요.",
+  "msg.awaiting_pen_change_to_optional": "필요하면 펜을 “{pen}”(으)로 교체한 뒤 다음 레이어를 위해 계속을 클릭하세요.",
   "msg.awaiting_optimize": "SVG 최적화가 끝나기를 기다리는 중…",
   "msg.optimizing": "SVG 최적화 중…",
   "msg.error_prefix": "오류: {error}",

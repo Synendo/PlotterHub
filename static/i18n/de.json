@@ -106,6 +106,8 @@
   "queue.empty": "Lege oben eine SVG ab, um zu starten.",
   "msg.awaiting_next_job": "Bereit für den nächsten Job. Papier einlegen / Stift wechseln, dann auf Weiter klicken.",
   "msg.awaiting_pen_change": "Wechsle bei Bedarf den Stift, dann klicke auf Weiter für die nächste Ebene.",
+  "msg.awaiting_pen_change_to": "Wechsle den Stift zu „{pen}“, dann klicke auf Weiter für die nächste Ebene.",
+  "msg.awaiting_pen_change_to_optional": "Wechsle bei Bedarf den Stift zu „{pen}“, dann klicke auf Weiter für die nächste Ebene.",
   "msg.awaiting_optimize": "Warte auf Abschluss der SVG-Optimierung…",
   "msg.optimizing": "Optimiere SVG…",
   "msg.error_prefix": "Fehler: {error}",
