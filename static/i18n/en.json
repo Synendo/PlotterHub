@@ -136,6 +136,8 @@
   "job.pause_between_layers": "Pause between layers for pen changes",
   "job.pause_after_job": "Pause after this job (for paper / pen change before the next one)",
   "job.delete_on_complete": "Delete on complete (remove the job from the queue when finished)",
+  "job.disable_motors_on_complete": "Disable Motors on Complete",
+  "job.disable_motors_on_complete.description": "Releases the motors after the job finishes to reduce heat, noise, and power use; the carriage will no longer be held in place.",
 
   "plotinfo.est_time": "Estimated time",
   "plotinfo.pendown_dist": "Pen-down distance",

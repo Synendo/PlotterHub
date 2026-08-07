@@ -168,6 +168,7 @@ class JobCreate(_OptimizeCreateFields):
     pause_between_layers: bool = True
     pause_after_job: bool = True
     delete_on_complete: bool = False
+    disable_motors_on_complete: bool = False
     paper_width_mm: float
     paper_height_mm: float
     margin_top_mm: float = 0.0
@@ -193,6 +194,7 @@ class SettingsUpdate(BaseModel):
     pause_between_layers_default: bool | None = None
     pause_after_job_default: bool | None = None
     delete_on_complete_default: bool | None = None
+    disable_motors_on_complete_default: bool | None = None
     speed_pendown_default: int | None = Field(None, ge=1, le=110)
     speed_penup_default: int | None = Field(None, ge=1, le=110)
     acceleration_default: int | None = Field(None, ge=1, le=100)
@@ -253,6 +255,7 @@ class JobUpdate(_OptimizeOptionalFields):
     pause_between_layers: bool | None = None
     pause_after_job: bool | None = None
     delete_on_complete: bool | None = None
+    disable_motors_on_complete: bool | None = None
     paper_width_mm: float | None = None
     paper_height_mm: float | None = None
     margin_top_mm: float | None = None
@@ -422,6 +425,7 @@ class ApiJobMetadata(_OptimizeOptionalFields):
     pause_between_layers: bool | None = None
     pause_after_job: bool | None = None
     delete_on_complete: bool | None = None
+    disable_motors_on_complete: bool | None = None
     speed_pendown: int | None = None
     speed_penup: int | None = None
     acceleration: int | None = None
@@ -538,6 +542,7 @@ async def api_create_job(file: UploadFile = File(...),
         "pause_between_layers": pick(meta.pause_between_layers, config.PAUSE_BETWEEN_LAYERS_DEFAULT),
         "pause_after_job": pick(meta.pause_after_job, config.PAUSE_AFTER_JOB_DEFAULT),
         "delete_on_complete": pick(meta.delete_on_complete, config.DELETE_ON_COMPLETE_DEFAULT),
+        "disable_motors_on_complete": pick(meta.disable_motors_on_complete, config.DISABLE_MOTORS_ON_COMPLETE_DEFAULT),
         "paper_width_mm": paper_width_mm,
         "paper_height_mm": paper_height_mm,
         "margin_top_mm": 0.0,

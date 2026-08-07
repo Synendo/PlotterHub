@@ -27,6 +27,7 @@ let appSettings = {
   pause_between_layers_default: true,
   pause_after_job_default: true,
   delete_on_complete_default: false,
+  disable_motors_on_complete_default: false,
   speed_pendown_default: 25,
   speed_penup_default: 75,
   acceleration_default: 75,
@@ -198,6 +199,7 @@ async function uploadAndQueue(file) {
       pause_between_layers: appSettings.pause_between_layers_default,
       pause_after_job: appSettings.pause_after_job_default,
       delete_on_complete: appSettings.delete_on_complete_default,
+      disable_motors_on_complete: appSettings.disable_motors_on_complete_default,
       paper_width_mm: w,
       paper_height_mm: h,
       margin_top_mm: 0,
@@ -421,6 +423,7 @@ function createCardForJob(job) {
   card.querySelector(".pause-between-layers").checked = job.pause_between_layers;
   card.querySelector(".pause-after-job").checked = job.pause_after_job;
   card.querySelector(".delete-on-complete").checked = !!job.delete_on_complete;
+  card.querySelector(".disable-motors-on-complete").checked = !!job.disable_motors_on_complete;
   card.querySelector(".optimize").checked = !!job.optimize_svg;
   card.querySelector(".optimize-linemerge").checked = job.optimize_svg_linemerge !== false;
   card.querySelector(".optimize-linesimplify").checked = job.optimize_svg_linesimplify !== false;
@@ -465,6 +468,7 @@ function createCardForJob(job) {
   card.querySelector(".pause-between-layers").addEventListener("change", () => queueCardUpdate(card));
   card.querySelector(".pause-after-job").addEventListener("change", () => queueCardUpdate(card));
   card.querySelector(".delete-on-complete").addEventListener("change", () => queueCardUpdate(card));
+  card.querySelector(".disable-motors-on-complete").addEventListener("change", () => queueCardUpdate(card));
   card.querySelector(".optimize").addEventListener("change", () => {
     // Master ON while every sub-option is off would be a no-op pipeline —
     // re-enable all four so the toggle actually does something.
@@ -1226,6 +1230,7 @@ async function sendCardUpdate(card, immediateUpdates) {
     updates.pause_between_layers = card.querySelector(".pause-between-layers").checked;
     updates.pause_after_job = card.querySelector(".pause-after-job").checked;
     updates.delete_on_complete = card.querySelector(".delete-on-complete").checked;
+    updates.disable_motors_on_complete = card.querySelector(".disable-motors-on-complete").checked;
     updates.optimize_svg = card.querySelector(".optimize").checked;
     updates.optimize_svg_linemerge = card.querySelector(".optimize-linemerge").checked;
     updates.optimize_svg_linesimplify = card.querySelector(".optimize-linesimplify").checked;
@@ -1555,6 +1560,7 @@ const settingsApiKeyCopy = $("settings-api-key-copy");
 const settingsPauseBetweenLayers = $("settings-pause-between-layers");
 const settingsPauseAfterJob = $("settings-pause-after-job");
 const settingsDeleteOnComplete = $("settings-delete-on-complete");
+const settingsDisableMotorsOnComplete = $("settings-disable-motors-on-complete");
 const settingsSpeedPendown = $("settings-speed-pendown");
 const settingsSpeedPenup = $("settings-speed-penup");
 const settingsAccel = $("settings-accel");
@@ -1606,6 +1612,7 @@ function applyAppSettings(data) {
     pause_between_layers_default: data.pause_between_layers_default ?? appSettings.pause_between_layers_default,
     pause_after_job_default: data.pause_after_job_default ?? appSettings.pause_after_job_default,
     delete_on_complete_default: data.delete_on_complete_default ?? appSettings.delete_on_complete_default,
+    disable_motors_on_complete_default: data.disable_motors_on_complete_default ?? appSettings.disable_motors_on_complete_default,
     speed_pendown_default: data.speed_pendown_default ?? appSettings.speed_pendown_default,
     speed_penup_default: data.speed_penup_default ?? appSettings.speed_penup_default,
     acceleration_default: data.acceleration_default ?? appSettings.acceleration_default,
@@ -1646,6 +1653,7 @@ async function openSettings() {
     settingsPauseBetweenLayers.checked = data.pause_between_layers_default ?? true;
     settingsPauseAfterJob.checked = data.pause_after_job_default ?? true;
     settingsDeleteOnComplete.checked = data.delete_on_complete_default ?? false;
+    settingsDisableMotorsOnComplete.checked = data.disable_motors_on_complete_default ?? false;
     settingsSpeedPendown.value = String(data.speed_pendown_default ?? 25);
     settingsSpeedPenup.value = String(data.speed_penup_default ?? 75);
     settingsAccel.value = String(data.acceleration_default ?? 75);
@@ -1675,6 +1683,7 @@ async function saveSettings() {
       pause_between_layers_default: settingsPauseBetweenLayers.checked,
       pause_after_job_default: settingsPauseAfterJob.checked,
       delete_on_complete_default: settingsDeleteOnComplete.checked,
+      disable_motors_on_complete_default: settingsDisableMotorsOnComplete.checked,
       speed_pendown_default: parseInt(settingsSpeedPendown.value),
       speed_penup_default: parseInt(settingsSpeedPenup.value),
       acceleration_default: parseInt(settingsAccel.value),
@@ -1722,6 +1731,7 @@ function resetSettingsJobOptions() {
   settingsPauseBetweenLayers.checked = true;
   settingsPauseAfterJob.checked = true;
   settingsDeleteOnComplete.checked = false;
+  settingsDisableMotorsOnComplete.checked = false;
 }
 
 function resetSettingsDisplay() {

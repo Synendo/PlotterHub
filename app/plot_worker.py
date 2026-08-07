@@ -67,6 +67,33 @@ def _uploads() -> Path:
     return _UPLOAD_DIR_LAZY
 
 
+
+def _disable_ebb_motors() -> None:
+    """Release both stepper motors after a job has completed successfully."""
+    try:
+        import serial
+    except Exception:
+        log.exception("EBB motor release skipped: pyserial unavailable")
+        return
+
+    for port_name in _ebb_candidate_ports():
+        try:
+            with serial.Serial(port_name, 9600, timeout=1, write_timeout=1) as port:
+                time.sleep(0.5)
+                port.write(b"V\r")
+                port.flush()
+                version = port.read_until(b"\n").decode("ascii", errors="replace")
+                if "EBB" not in version:
+                    continue
+                port.write(b"EM,0,0\r")
+                port.flush()
+            log.info("EBB motors disabled after completed job on %s", port_name)
+            return
+        except Exception:
+            log.debug("EBB motor release failed on %s", port_name, exc_info=True)
+
+    log.warning("EBB motor release failed on all candidate ports")
+
 # Preview cache ------------------------------------------------------------
 
 def _preview_cache_key(svg_path: Path, layer_indices: list[int], job: dict) -> str:
@@ -970,6 +997,11 @@ def _run_staged_loop(job_id: str, svg_path: Path, first_mode: str) -> None:
             continue
         # No more stages
         state.update_job(job_id, status="completed", resume_path=None)
+        # Release the energized stepper motors now that the full job is done;
+        # keeping them enabled during plotting and layer pauses preserves position,
+        # while disabling them afterward reduces heat, noise, and power use.
+        if job.get("disable_motors_on_complete", False):
+            _disable_ebb_motors()
         if job.get("delete_on_complete", False):
             from .main import delete_svg_files
             svg_id = job.get("svg_id")
