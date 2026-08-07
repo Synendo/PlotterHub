@@ -66,6 +66,96 @@ def _uploads() -> Path:
         _UPLOAD_DIR_LAZY = UPLOAD_DIR
     return _UPLOAD_DIR_LAZY
 
+# EBB handoff --------------------------------------------------------------
+#
+# This preflight runs before pyaxidraw opens the board.  NextDraw uses EBB's
+# v3 "future" response syntax, while pyaxidraw expects the older legacy
+# responses.  The handoff therefore has three jobs:
+#
+#   1. Find the actual EBB rather than trusting the first ttyACM device.
+#   2. Wait for USB-serial startup, then verify the device with ``V``.
+#   3. Switch the EBB to legacy syntax and reset its application state before
+#      pyaxidraw takes ownership of the port.
+import glob
+
+
+def _ebb_candidate_ports() -> list[str]:
+    """Return likely Linux EBB paths, with stable paths tried first.
+
+    ``/dev/serial/by-id`` is preferred because it remains stable when Linux
+    renumbers USB devices.  The ttyACM fallback is needed on installations
+    without udev's by-id links, but those paths are only candidates: callers
+    must still verify the device before sending EBB commands.
+    """
+    return list(dict.fromkeys(
+        sorted(glob.glob("/dev/serial/by-id/*EiBotBoard*"))
+        + sorted(glob.glob("/dev/ttyACM*"))
+    ))
+
+
+def _normalize_ebb_response_syntax() -> None:
+    """Prepare the EBB for pyaxidraw and leave the port closed.
+
+    Some newer clients, including Bantam Tools NextDraw, may leave EBB v3
+    firmware in future syntax mode after releasing the USB device. PlotterHub
+    uses pyaxidraw, which expects the legacy boot-default response syntax.
+
+    The preflight is deliberately best-effort: failure is logged and left to
+    pyaxidraw to report.  It must not claim success for an arbitrary ACM
+    device, though, because ``R`` is an active EBB reset command.
+    """
+    try:
+        import serial
+    except Exception:
+        log.exception("EBB syntax preflight skipped: pyserial unavailable")
+        return
+
+    ports = _ebb_candidate_ports()
+    if not ports:
+        log.warning("EBB syntax preflight skipped: no serial port available")
+        return
+
+    last_error: Exception | None = None
+    for port_name in ports:
+        try:
+            with serial.Serial(port_name, 9600, timeout=1, write_timeout=1) as port:
+                # Opening a USB CDC serial port can briefly reset or reattach
+                # the EBB.  Give it time to finish before the first command.
+                time.sleep(0.5)
+                port.reset_input_buffer()
+
+                # ttyACM is a generic device class.  Verify the firmware
+                # response before sending CU/R, which would otherwise affect
+                # an unrelated serial device or falsely report success.
+                port.write(b"V\r")
+                port.flush()
+                version = port.read_until(b"\n").decode("ascii", errors="replace")
+                if "EBB" not in version:
+                    raise RuntimeError(
+                        f"device did not identify as EBB (response={version.strip()!r})"
+                    )
+
+                # CU,10,0 selects legacy response syntax.  The CU response is
+                # intentionally not parsed: the firmware changes response
+                # format as this command executes, so it is non-standard.
+                port.write(b"CU,10,0\r")
+                port.flush()
+                time.sleep(0.2)
+
+                # R reinitializes EBB application state (including any stale
+                # servo/timer state) without rebooting the USB device.  This
+                # handoff assumes PlotterHub is the sole owner of the EBB.
+                port.write(b"R\r")
+                port.flush()
+                time.sleep(0.75)
+            log.info("EBB syntax preflight completed on %s (%s)", port_name, version.strip())
+            return
+        except Exception as exc:
+            last_error = exc
+            log.debug("EBB syntax preflight failed on %s", port_name, exc_info=True)
+
+    if last_error is not None:
+        log.warning("EBB syntax preflight failed on all candidate ports: %s", last_error)
 
 # Preview cache ------------------------------------------------------------
 
@@ -235,6 +325,7 @@ def _stop_button_poll() -> None:
 def _run_stage(current_svg: Path, mode: str, job: dict,
                stage: dict | None = None) -> tuple[int, str]:
     global _current_ad
+    _normalize_ebb_response_syntax() # 
     ad = axidraw.AxiDraw()
     try:
         ad.plot_setup(str(current_svg))
